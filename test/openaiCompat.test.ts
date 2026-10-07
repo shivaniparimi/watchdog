@@ -2,7 +2,8 @@ import { describe, expect, it } from "vitest";
 import { z } from "zod";
 import { repoToolList } from "../src/agent/repoTools.js";
 import { createProvider } from "../src/ai/index.js";
-import { OpenAICompatProvider, toFunctionSchema } from "../src/ai/openaiCompat.js";
+import { OpenAICompatProvider, parseRetryDelayMs, toFunctionSchema } from "../src/ai/openaiCompat.js";
+import { AiQuotaError } from "../src/ai/types.js";
 import { gitRepo } from "./helpers.js";
 
 type Reply = { status?: number; headers?: Record<string, string>; body: unknown };
@@ -15,7 +16,7 @@ const call = (id: string, name: string, args: unknown) => ({
 const reply = (message: object): Reply => ({ body: { choices: [{ message: { role: "assistant", ...message } }] } });
 
 /** A provider whose HTTP layer replays `replies` in order and records each request body. */
-function fake(replies: Reply[]) {
+function fake(replies: Reply[], fallbackModels: string[] = []) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- request bodies are inspected loosely in tests.
   const requests: any[] = [];
   const urls: string[] = [];
@@ -30,6 +31,7 @@ function fake(replies: Reply[]) {
     baseUrl: "https://example.test/v1beta/openai/",
     apiKey: "key",
     model: "gemini-test",
+    fallbackModels,
     fetch: fetchImpl,
     retryDelayMs: 0,
   });
@@ -140,5 +142,62 @@ describe("createProvider", () => {
     expect(createProvider({ provider: "gemini", anthropicApiKey: "a" })).toBeNull();
     expect(createProvider({ geminiApiKey: "g", model: "gemini-3.7-flash" })?.model).toBe("gemini-3.7-flash");
     expect(createProvider({})).toBeNull();
+  });
+});
+
+const quotaBody = (delay: string) => ({
+  error: { code: 429, message: `Quota exceeded for metric: free_tier_requests, limit: 20\nPlease retry in ${delay}.` },
+});
+
+describe("parseRetryDelayMs", () => {
+  it("reads Gemini's retryDelay detail, its message text, or Retry-After", () => {
+    expect(parseRetryDelayMs('{"details":[{"retryDelay": "34s"}]}', null)).toBe(34_000);
+    expect(parseRetryDelayMs("Please retry in 18m5.02s.", null)).toBeCloseTo(1_085_020);
+    expect(parseRetryDelayMs("Please retry in 1h2m.", null)).toBe(3_720_000);
+    expect(parseRetryDelayMs("nothing", "7")).toBe(7000);
+    expect(parseRetryDelayMs("nothing", null)).toBeNull();
+  });
+});
+
+describe("free-tier quota handling", () => {
+  const ok = reply({ tool_calls: [call("a", "submit", { answers: [], note: null })] });
+
+  it("waits out a short rate limit on the same model", async () => {
+    const { provider, requests } = fake([{ status: 429, body: quotaBody("0s") }, ok], ["gemini-backup"]);
+    await provider.runAgent({ system: "s", user: "u", tools: [], submit });
+    expect(requests.map((r) => r.model)).toEqual(["gemini-test", "gemini-test"]);
+  });
+
+  it("switches to the next model when a quota is used up or a model is missing, dropping thought signatures", async () => {
+    const { provider, requests } = fake(
+      [
+        reply({ tool_calls: [call("a", "list_files", {})], extra_content: { signature: "sig" } }),
+        { status: 429, body: quotaBody("18m5s") },
+        { status: 404, body: { error: { message: "model not found" } } },
+        ok,
+      ],
+      ["gemini-backup", "gemini-third"],
+    );
+    const root = gitRepo({ "a.ts": "x\n" });
+    const result = await provider.runAgent({ system: "s", user: "u", tools: repoToolList(root), submit });
+    expect(result.output).toEqual({ answers: [], note: null });
+    expect(requests.map((r) => r.model)).toEqual(["gemini-test", "gemini-test", "gemini-backup", "gemini-third"]);
+    expect(provider.model).toBe("gemini-third");
+    expect(requests[3].messages[2].extra_content).toBeUndefined();
+  });
+
+  it("throws AiQuotaError with the reset time once every model's quota is used up", async () => {
+    const { provider } = fake(
+      [
+        { status: 429, body: quotaBody("2h0m") },
+        { status: 429, body: quotaBody("2h0m") },
+      ],
+      ["gemini-backup"],
+    );
+    const err = await provider.runAgent({ system: "s", user: "u", tools: [], submit }).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(AiQuotaError);
+    expect((err as Error).message).toMatch(
+      /quota is used up on every model tried \(gemini-test, gemini-backup\)\. It resets in about 2 hour/,
+    );
   });
 });

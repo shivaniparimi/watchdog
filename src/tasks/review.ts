@@ -10,6 +10,7 @@ import {
   validateFindings,
 } from "../review/report.js";
 import { reviewPr, SEVERITIES, summarize, type Severity } from "../review/review.js";
+import { AiQuotaError } from "../ai/index.js";
 import { fsRepo } from "../repo.js";
 import { proveFindings } from "../verify/prove.js";
 import { detectRunners } from "../verify/runner.js";
@@ -24,6 +25,19 @@ function severityInput(name: string, fallback: Severity | "none"): Severity | "n
 }
 
 export async function runReview(ctx: TaskContext): Promise<void> {
+  try {
+    await review(ctx);
+  } catch (err) {
+    // Running out of a free tier's quota shouldn't fail the PR: say so and move on.
+    if (!(err instanceof AiQuotaError)) throw err;
+    const note = `🐕 Watchdog AI review skipped: ${err.message}`;
+    core.warning(note);
+    await upsertSummary(ctx.octokit, ctx.pr, REVIEW_SUMMARY_MARKER, `${REVIEW_SUMMARY_MARKER}\n${note}`);
+    await core.summary.addRaw(note).write();
+  }
+}
+
+async function review(ctx: TaskContext): Promise<void> {
   if (!ctx.ai) {
     const note =
       "🐕 Watchdog AI review skipped: add a free `GEMINI_API_KEY` secret (or an `ANTHROPIC_API_KEY`) to enable it.";
@@ -82,7 +96,7 @@ export async function runReview(ctx: TaskContext): Promise<void> {
         repo: fsRepo(options.repoRoot),
         runners,
         files: reviewed,
-        maxProofs: Number(core.getInput("max-proofs") || 5),
+        maxProofs: Number(core.getInput("max-proofs")) || ai.maxProofs,
         testTimeoutMs: Number(core.getInput("test-timeout") || 120) * 1000,
       });
       for (const [i, proof] of proofs) findings[i]!.proof = proof;

@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { nudge, type AgentRequest, type AgentResult, type AiProvider, type ToolDef } from "./types.js";
+import { AiQuotaError, nudge, type AgentRequest, type AgentResult, type AiProvider, type ToolDef } from "./types.js";
 
 export const GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai";
 export const GEMINI_DEFAULT_MODEL = "gemini-3.8-flash";
@@ -60,45 +60,77 @@ export interface OpenAICompatOptions {
   baseUrl: string;
   apiKey: string;
   model: string;
+  /** Models to switch to, in order, when the current one's quota runs out or it isn't available. */
+  fallbackModels?: string[];
   fetch?: typeof fetch;
   /** Base delay for retrying rate-limited requests; tests set it to 0. */
   retryDelayMs?: number;
 }
 
+/** Longest wait for a rate limit to clear before switching models instead. */
+const MAX_WAIT_MS = 60_000;
+
+/**
+ * How long the API says to wait, from Gemini's error body (`"retryDelay": "34s"` or
+ * "Please retry in 18m5.02s") or a Retry-After header.
+ */
+export function parseRetryDelayMs(body: string, retryAfterHeader: string | null): number | null {
+  const detail = /"retryDelay"\s*:\s*"([\d.]+)s"/.exec(body);
+  if (detail) return Number(detail[1]) * 1000;
+  const text = /retry in (?:(\d+)h)?\s*(?:(\d+)m)?\s*(?:([\d.]+)s)?/i.exec(body);
+  if (text && (text[1] || text[2] || text[3])) {
+    return ((Number(text[1] ?? 0) * 60 + Number(text[2] ?? 0)) * 60 + Number(text[3] ?? 0)) * 1000;
+  }
+  const header = Number(retryAfterHeader);
+  return Number.isFinite(header) && header > 0 ? header * 1000 : null;
+}
+
+function describeWait(ms: number): string {
+  const min = Math.round(ms / 60_000);
+  return min >= 60
+    ? `about ${Math.round(min / 60)} hour(s)`
+    : min >= 1
+      ? `about ${min} minute(s)`
+      : `${Math.ceil(ms / 1000)}s`;
+}
+
 /**
  * Any provider with an OpenAI-compatible chat completions API that supports function calling.
- * Used for Gemini's free tier: requests are retried with backoff when rate-limited, and prompt
- * budgets are kept small to stay inside free-tier token limits.
+ * Used for Gemini's free tier, where each model has its own small request quota: short rate limits
+ * are waited out, and when a model's quota is used up the provider moves on to the next free model.
  */
 export class OpenAICompatProvider implements AiProvider {
   readonly name = "gemini" as const;
-  readonly reviewChars = 150_000;
-  readonly maxIterations = 12;
-  readonly model: string;
+  readonly reviewChars = 120_000;
+  readonly maxIterations = 8;
+  readonly maxProofs = 2;
+  private readonly models: string[];
+  private modelIndex = 0;
   private readonly fetchImpl: typeof fetch;
 
   constructor(private readonly options: OpenAICompatOptions) {
-    this.model = options.model;
+    this.models = [options.model, ...(options.fallbackModels ?? []).filter((m) => m !== options.model)];
     this.fetchImpl = options.fetch ?? fetch;
   }
 
-  private async complete(messages: Message[], tools: ToolDef[]): Promise<Extract<Message, { role: "assistant" }>> {
-    const body = JSON.stringify({
-      model: this.model,
-      messages,
-      tools: tools.map((t) => ({
-        type: "function",
-        function: { name: t.name, description: t.description, parameters: toFunctionSchema(t.inputSchema) },
-      })),
-      tool_choice: "auto",
-    });
+  /** The model currently in use (it changes when a quota runs out). */
+  get model(): string {
+    return this.models[this.modelIndex]!;
+  }
 
+  private async complete(messages: Message[], tools: ToolDef[]): Promise<Extract<Message, { role: "assistant" }>> {
+    const toolDefs = tools.map((t) => ({
+      type: "function",
+      function: { name: t.name, description: t.description, parameters: toFunctionSchema(t.inputSchema) },
+    }));
     const base = this.options.retryDelayMs ?? 2000;
+    let lastWait = 0;
+
     for (let attempt = 0; ; attempt++) {
       const res = await this.fetchImpl(`${this.options.baseUrl.replace(/\/$/, "")}/chat/completions`, {
         method: "POST",
         headers: { "content-type": "application/json", authorization: `Bearer ${this.options.apiKey}` },
-        body,
+        body: JSON.stringify({ model: this.model, messages, tools: toolDefs, tool_choice: "auto" }),
       });
       if (res.ok) {
         const data = (await res.json()) as CompletionResponse;
@@ -106,14 +138,41 @@ export class OpenAICompatProvider implements AiProvider {
         if (!message) throw new Error("The model returned no message.");
         return message;
       }
-      // Free tiers are rate-limited per minute: wait and retry, honoring Retry-After when given.
-      const retryable = res.status === 429 || res.status >= 500;
+
       const text = await res.text();
-      if (!retryable || attempt >= 5) throw new Error(`${this.name} API error ${res.status}: ${text.slice(0, 500)}`);
-      const retryAfter = Number(res.headers.get("retry-after"));
-      const wait = Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter * 1000 : base * 2 ** attempt;
-      console.warn(`${this.name} API ${res.status}; retrying in ${Math.round(wait / 1000)}s.`);
-      await sleep(Math.min(wait, 90_000));
+      const quota = res.status === 429;
+      const unavailable = res.status === 404;
+      if (!quota && !unavailable && res.status < 500) {
+        throw new Error(`${this.name} API error ${res.status}: ${text.slice(0, 500)}`);
+      }
+
+      // A short rate limit (per minute) is worth waiting out on the same model.
+      const wait = quota
+        ? (parseRetryDelayMs(text, res.headers.get("retry-after")) ?? base * 2 ** attempt)
+        : base * 2 ** attempt;
+      lastWait = wait;
+      if (!unavailable && wait <= MAX_WAIT_MS && attempt < 4) {
+        console.warn(`${this.name} API ${res.status} on ${this.model}; retrying in ${Math.ceil(wait / 1000)}s.`);
+        await sleep(wait);
+        continue;
+      }
+
+      // Quota used up (or model unavailable): move on to the next free model.
+      if (this.modelIndex + 1 < this.models.length) {
+        const from = this.model;
+        this.modelIndex++;
+        console.warn(`${from} ${unavailable ? "isn't available" : "quota used up"}; switching to ${this.model}.`);
+        // Thought signatures belong to the model that produced them, so drop them from the history.
+        for (const m of messages) if (m.role === "assistant") delete m.extra_content;
+        attempt = -1;
+        continue;
+      }
+      if (quota)
+        throw new AiQuotaError(
+          `${this.name} free-tier quota is used up on every model tried (${this.models.join(", ")}). It resets in ${describeWait(lastWait)}.`,
+          lastWait,
+        );
+      throw new Error(`${this.name} API error ${res.status}: ${text.slice(0, 500)}`);
     }
   }
 
@@ -182,6 +241,21 @@ export class OpenAICompatProvider implements AiProvider {
   }
 }
 
+/** Free-tier Gemini models, newest first. Each has its own quota, so running out on one moves to the next. */
+export const GEMINI_FREE_MODELS = [
+  "gemini-3.8-flash",
+  "gemini-3.7-flash",
+  "gemini-3.6-flash",
+  "gemini-3.5-flash",
+  "gemini-2.5-flash",
+];
+
 export function geminiProvider(apiKey: string, model = GEMINI_DEFAULT_MODEL, fetchImpl?: typeof fetch) {
-  return new OpenAICompatProvider({ baseUrl: GEMINI_BASE_URL, apiKey, model, fetch: fetchImpl });
+  return new OpenAICompatProvider({
+    baseUrl: GEMINI_BASE_URL,
+    apiKey,
+    model,
+    fallbackModels: GEMINI_FREE_MODELS,
+    fetch: fetchImpl,
+  });
 }
