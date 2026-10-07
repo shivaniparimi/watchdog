@@ -345,7 +345,8 @@ jobs:
         run: |
           if out=$(gh api "repos/$GITHUB_REPOSITORY/dependency-graph/compare/$BASE_SHA...$HEAD_SHA" 2>&1); then
             echo "enabled=true" >> "$GITHUB_OUTPUT"
-          elif echo "$out" | grep -qiE "dependency graph|not supported|not enabled|advanced security"; then
+          # A repository without the dependency graph gets a bare 403 (or 404), not an explanation.
+          elif echo "$out" | grep -qiE "HTTP 40[34]|forbidden|dependency graph|not supported|not enabled|advanced security"; then
             echo "::warning::Dependency review skipped: turn on the dependency graph at https://github.com/$GITHUB_REPOSITORY/settings/security_analysis"
             echo "enabled=false" >> "$GITHUB_OUTPUT"
           else
