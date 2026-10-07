@@ -1,3 +1,4 @@
+import { posix } from "node:path";
 import { classifyFile, languageFamily, languageOf } from "./classify.js";
 import type { Language } from "./types.js";
 
@@ -41,16 +42,35 @@ function escapeRegex(s: string): string {
 }
 
 /** Does the test file import the source module? */
-function importsModule(testContent: string, sourcePath: string, lang: Language): boolean {
+/** Module specifiers a JS/TS file imports: `from "x"`, `require("x")`, `import("x")`, `import "x"`. */
+function jsSpecifiers(content: string): string[] {
+  return [
+    ...content.matchAll(
+      /^\s*(?:import|export)\b[^"'`;]*?["']([^"']+)["']|\b(?:require|import)\(\s*["']([^"']+)["']\s*\)/gm,
+    ),
+  ].map((m) => (m[1] ?? m[2])!);
+}
+
+/** Does the test file import the source module? */
+function importsModule(testContent: string, sourcePath: string, lang: Language, testPath: string): boolean {
   const stem = escapeRegex(sourceStem(sourcePath));
   const fileStem = escapeRegex(stripExt(basename(sourcePath)));
   switch (lang) {
     case "ts":
-    case "js":
-      // from '../cart/total'  /  require("./total.js")  /  from '@/cart'
-      return new RegExp(`(from|require\\(|import\\()\\s*["'][^"']*\\/(${stem}|${fileStem})(\\.[cm]?[jt]sx?)?["']`).test(
-        testContent,
-      );
+    case "js": {
+      // Relative imports must resolve to the source file itself; a different `./total` elsewhere doesn't count.
+      // Non-relative ones (path aliases like `@/cart/total`) can't be resolved here, so match on the last segment.
+      const target = stripExt(sourcePath);
+      const targetDir = sourceStem(sourcePath) === basename(dirname(sourcePath)) ? dirname(sourcePath) : null;
+      return jsSpecifiers(testContent).some((spec) => {
+        const bare = spec.replace(/\.[cm]?[jt]sx?$/, "");
+        if (bare.startsWith(".")) {
+          const resolved = posix.normalize(posix.join(dirname(testPath), bare));
+          return resolved === target || (targetDir !== null && resolved === targetDir);
+        }
+        return new RegExp(`(^|/)(${stem}|${fileStem})$`).test(bare);
+      });
+    }
     case "python":
       // from app.cart.total import x  /  import app.cart.total  /  from app.cart import total
       return new RegExp(
@@ -88,7 +108,7 @@ export function candidateTests(sourcePath: string, repo: RepoReader): string[] {
       continue;
     }
     const content = repo.read(file);
-    if (content && importsModule(content, sourcePath, lang)) matches.push(file);
+    if (content && importsModule(content, sourcePath, lang, file)) matches.push(file);
   }
   return matches;
 }
