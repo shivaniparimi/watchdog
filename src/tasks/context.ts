@@ -1,6 +1,6 @@
 import * as core from "@actions/core";
 import { context, getOctokit } from "@actions/github";
-import Anthropic from "@anthropic-ai/sdk";
+import { createProvider, type AiProvider } from "../ai/index.js";
 import { fetchFileAtHead, listPrFiles, type PrRef } from "../github.js";
 import type { ChangedFile } from "../types.js";
 
@@ -14,9 +14,8 @@ export interface TaskContext {
   author: string;
   files: ChangedFile[];
   ignorePaths: string[];
-  /** Null when no API key was given. */
-  anthropic: Anthropic | null;
-  model: string;
+  /** Null when no API key was given; AI steps are then skipped. */
+  ai: AiProvider | null;
 }
 
 export function listInput(name: string): string[] {
@@ -28,7 +27,7 @@ export function listInput(name: string): string[] {
 }
 
 /** Load everything both tasks need from the pull_request event, or null when not run on a PR. */
-export async function loadContext(defaultModel: string): Promise<TaskContext | null> {
+export async function loadContext(): Promise<TaskContext | null> {
   const pull = context.payload.pull_request;
   if (!pull) return null;
 
@@ -39,8 +38,13 @@ export async function loadContext(defaultModel: string): Promise<TaskContext | n
     pullNumber: pull.number,
     headSha: core.getInput("head-sha") || pull.head.sha,
   };
-  const apiKey = core.getInput("anthropic-api-key");
-  if (apiKey) core.setSecret(apiKey);
+  const geminiApiKey = core.getInput("gemini-api-key");
+  const anthropicApiKey = core.getInput("anthropic-api-key");
+  for (const key of [geminiApiKey, anthropicApiKey]) if (key) core.setSecret(key);
+  const provider = (core.getInput("ai-provider") || "auto") as "auto" | "gemini" | "anthropic";
+  if (!["auto", "gemini", "anthropic"].includes(provider)) {
+    throw new Error(`ai-provider must be auto, gemini or anthropic (got "${provider}")`);
+  }
 
   return {
     octokit,
@@ -50,8 +54,7 @@ export async function loadContext(defaultModel: string): Promise<TaskContext | n
     author: pull.user?.login ?? "",
     files: await listPrFiles(octokit, pr),
     ignorePaths: listInput("ignore-paths"),
-    anthropic: apiKey ? new Anthropic({ apiKey }) : null,
-    model: core.getInput("model") || defaultModel,
+    ai: createProvider({ provider, geminiApiKey, anthropicApiKey, model: core.getInput("model") }),
   };
 }
 

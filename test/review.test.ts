@@ -2,6 +2,7 @@ import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { AnthropicProvider } from "../src/ai/anthropic.js";
 import { collectReviewFiles } from "../src/review/collect.js";
 import { readLintResults } from "../src/review/lintResults.js";
 import {
@@ -182,7 +183,19 @@ describe("reviewPr", () => {
         "tool_use",
       ),
       message([text("Done.")]),
-      { overview: "ok", score: 14, verdict: "minor-issues", strengths: [], risks: [] },
+      message(
+        [
+          toolUse("t3", "submit_summary", {
+            overview: "ok",
+            score: 14,
+            verdict: "minor-issues",
+            strengths: [],
+            risks: [],
+          }),
+        ],
+        "tool_use",
+      ),
+      message([text("Done.")]),
     ]);
     const pr = {
       title: "Add logging",
@@ -190,7 +203,7 @@ describe("reviewPr", () => {
       author: "dev",
       commits: ["Log payments\n\nbody"],
     };
-    const options = { client, model: "claude-opus-5-5", lintResults: "js/eslint: fail", repoRoot: root };
+    const options = { provider: new AnthropicProvider(client), lintResults: "js/eslint: fail", repoRoot: root };
 
     const { findings, toolCalls } = await reviewPr(pr, collected, options);
     expect(toolCalls).toBe(1);
@@ -218,7 +231,8 @@ describe("reviewPr", () => {
     expect(toolResult.content).toContain("src/checkout.js:1:pay(0);");
 
     const summary = await summarize(pr, collected.files, [], options);
-    expect(summary!.score).toBe(10);
+    expect(summary!.score).toBe(10); // Clamped to 1-10.
+    expect(requests[3].tools.map((t: { name: string }) => t.name)).toEqual(["submit_summary"]);
   });
 });
 

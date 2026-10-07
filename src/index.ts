@@ -1,5 +1,4 @@
 import * as core from "@actions/core";
-import { DEFAULT_MODEL } from "./judge.js";
 import { loadContext } from "./tasks/context.js";
 import { runReview } from "./tasks/review.js";
 import { runTestGap } from "./tasks/testGap.js";
@@ -8,7 +7,7 @@ async function run(): Promise<void> {
   const task = core.getInput("task") || "review";
   if (task !== "review" && task !== "test-gap") throw new Error(`task must be "review" or "test-gap" (got "${task}")`);
 
-  const ctx = await loadContext(DEFAULT_MODEL);
+  const ctx = await loadContext();
   if (!ctx) {
     core.info("Not a pull_request event; nothing to do.");
     return;

@@ -28,7 +28,13 @@ export interface Finding extends RawFinding {
  */
 export function validateFindings(raw: RawFinding[], files: ReviewFile[]): Finding[] {
   const byPath = new Map(files.map((f) => [f.path, f]));
-  return raw.map((f) => {
+  return raw.map((original) => {
+    // Schemas use plain numbers (integer bounds aren't supported everywhere), so round line numbers here.
+    const f = {
+      ...original,
+      line: Math.round(original.line),
+      start_line: original.start_line === null ? null : Math.round(original.start_line),
+    };
     const commentable = byPath.get(f.path)?.patch.commentable;
     if (!commentable?.has(f.line)) return { ...f, start_line: null, suggestion: "", inline: false };
 

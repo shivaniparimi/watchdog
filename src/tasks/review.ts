@@ -21,8 +21,9 @@ function severityInput(name: string, fallback: Severity | "none"): Severity | "n
 }
 
 export async function runReview(ctx: TaskContext): Promise<void> {
-  if (!ctx.anthropic) {
-    const note = "🐕 Watchdog AI review skipped: add an `ANTHROPIC_API_KEY` secret to enable it.";
+  if (!ctx.ai) {
+    const note =
+      "🐕 Watchdog AI review skipped: add a free `GEMINI_API_KEY` secret (or an `ANTHROPIC_API_KEY`) to enable it.";
     core.warning(note);
     await core.summary.addRaw(note).write();
     return;
@@ -31,8 +32,10 @@ export async function runReview(ctx: TaskContext): Promise<void> {
   const minSeverity = severityInput("min-severity", "minor");
   const failOn = severityInput("fail-on-severity", "none");
   const maxComments = Number(core.getInput("max-comments") || 15);
-  const maxChars = Number(core.getInput("max-review-chars") || 400_000);
-  const maxIterations = Number(core.getInput("max-iterations") || 30);
+  const ai = ctx.ai;
+  // Defaults depend on the provider: free tiers get smaller prompts and fewer round trips.
+  const maxChars = Number(core.getInput("max-review-chars")) || ai.reviewChars;
+  const maxIterations = Number(core.getInput("max-iterations")) || ai.maxIterations;
 
   const paths = ctx.files.filter((f) => f.status !== "removed").map((f) => f.path);
   const contents = await fetchHeadContents(ctx, paths);
@@ -54,8 +57,7 @@ export async function runReview(ctx: TaskContext): Promise<void> {
   });
   const pr = { title: ctx.title, body: ctx.body, author: ctx.author, commits: commits.map((c) => c.commit.message) };
   const options = {
-    client: ctx.anthropic,
-    model: ctx.model,
+    provider: ai,
     lintResults: readLintResults(core.getInput("lint-results") || undefined),
     repoRoot: process.env.GITHUB_WORKSPACE ?? process.cwd(),
     maxIterations,
@@ -76,7 +78,7 @@ export async function runReview(ctx: TaskContext): Promise<void> {
     filesReviewed: reviewed.length,
     listed: collected.listed,
     toolCalls,
-    model: ctx.model,
+    model: ai.model,
   });
   await upsertSummary(ctx.octokit, ctx.pr, REVIEW_SUMMARY_MARKER, markdown);
   await core.summary.addRaw(markdown).write();

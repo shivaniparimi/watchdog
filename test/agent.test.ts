@@ -2,8 +2,8 @@ import { symlinkSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
-import { runAgent } from "../src/agent/agent.js";
-import { repoTools, safePath } from "../src/agent/repoTools.js";
+import { repoToolList, repoTools, safePath } from "../src/agent/repoTools.js";
+import { AnthropicProvider } from "../src/ai/anthropic.js";
 import { fakeClient, gitRepo, message, text, toolUse } from "./helpers.js";
 
 const files = {
@@ -71,7 +71,7 @@ describe("repoTools", () => {
   });
 });
 
-describe("runAgent", () => {
+describe("AnthropicProvider.runAgent", () => {
   const schema = z.object({ answers: z.array(z.string()) });
   const submit = { name: "submit", description: "Submit.", schema };
 
@@ -82,7 +82,12 @@ describe("runAgent", () => {
       message([toolUse("b", "submit", { answers: ["pay calls charge"] })], "tool_use"),
       message([text("Done.")]),
     ]);
-    const result = await runAgent({ client, model: "m", system: "s", user: "u", tools: repoTools(root), submit });
+    const result = await new AnthropicProvider(client, "m").runAgent({
+      system: "s",
+      user: "u",
+      tools: repoToolList(root),
+      submit,
+    });
     expect(result).toEqual({ output: { answers: ["pay calls charge"] }, toolCalls: 1 });
     expect(requests[1].messages.at(-1).content[0].content).toContain("1: export function pay(n: number) {");
     expect(requests[0].tools.at(-1)).toMatchObject({ name: "submit", strict: true });
@@ -94,7 +99,7 @@ describe("runAgent", () => {
       message([toolUse("b", "submit", { answers: [] })], "tool_use"),
       message([text("Done.")]),
     ]);
-    const result = await runAgent({ client, model: "m", system: "s", user: "u", tools: [], submit });
+    const result = await new AnthropicProvider(client, "m").runAgent({ system: "s", user: "u", tools: [], submit });
     expect(result.output).toEqual({ answers: [] });
     expect(requests[1].messages.at(-1).content.at(-1).text).toMatch(/^Call submit now/);
   });
@@ -107,12 +112,10 @@ describe("runAgent", () => {
       message([toolUse("c", "submit", { answers: ["x"] })], "tool_use"),
       message([text("Done.")]),
     ]);
-    const result = await runAgent({
-      client,
-      model: "m",
+    const result = await new AnthropicProvider(client, "m").runAgent({
       system: "s",
       user: "u",
-      tools: repoTools(root),
+      tools: repoToolList(root),
       submit,
       maxIterations: 2,
     });

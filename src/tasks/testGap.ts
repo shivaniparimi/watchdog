@@ -26,12 +26,12 @@ export async function runTestGap(ctx: TaskContext): Promise<void> {
   const repo = fsRepo(process.env.GITHUB_WORKSPACE ?? process.cwd(), await fetchHeadContents(ctx, sources));
 
   let judgeFn: Judge | undefined;
-  if (ctx.anthropic) {
-    const client = ctx.anthropic;
+  if (ctx.ai) {
+    const provider = ctx.ai;
     const repoRoot = process.env.GITHUB_WORKSPACE ?? process.cwd();
-    judgeFn = (symbols) => judge(symbols, { client, model: ctx.model, repoRoot });
+    judgeFn = (symbols) => judge(symbols, { provider, repoRoot });
   } else {
-    core.warning("No anthropic-api-key given; running test-gap rule checks only.");
+    core.warning("No AI key given (gemini-api-key or anthropic-api-key); running test-gap rule checks only.");
   }
 
   const result = await findTestGaps(ctx.files, repo, config, judgeFn);
