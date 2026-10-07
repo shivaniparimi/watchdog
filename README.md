@@ -1,4 +1,4 @@
-# Test Gap Finder
+# Watchdog: Test Gap Finder
 
 A GitHub Action that flags functions a pull request changed when no test covers the change.
 
@@ -34,7 +34,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: <your-github-user>/test-gap@v1
+      - uses: <your-github-user>/watchdog@v1
         with:
           anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
 ```

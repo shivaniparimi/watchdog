@@ -1,4 +1,4 @@
-name: Test Gap Finder
+name: Watchdog Test Gap Finder
 description: Flags functions changed in a pull request that no test covers.
 branding:
   icon: check-square

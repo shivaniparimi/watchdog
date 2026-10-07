@@ -1,5 +1,5 @@
 {
-  "name": "test-gap",
+  "name": "watchdog",
   "version": "1.0.0",
   "description": "GitHub Action that flags changed functions with no matching test change",
   "main": "dist/index.cjs",

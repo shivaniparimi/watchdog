@@ -17,7 +17,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      # In another repo, use: uses: <your-github-user>/test-gap@v1
+      # In another repo, use: uses: <your-github-user>/watchdog@v1
       - uses: ./
         with:
           anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
