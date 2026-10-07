@@ -5,3 +5,4 @@ export function applyCoupon(total: number, code: string) {
   }
   return total - discount;
 }
+// trigger re-run
