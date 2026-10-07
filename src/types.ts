@@ -73,8 +73,8 @@ export interface Verdict {
   risk: Risk;
   reason: string;
   suggestedTest: string;
-  /** "ai" when Claude decided, "rule" when the rule check decided on its own. */
-  source: "ai" | "rule";
+  /** Who decided: the AI, the rule check on its own, or a mutation that no test caught. */
+  source: "ai" | "rule" | "mutation";
   /** The rule check couldn't decide and AI was unavailable; shown in the summary only. */
   uncertain?: boolean;
 }

@@ -6,6 +6,7 @@ Automated pull request checks for JavaScript/TypeScript, Python, Java, C/C++ and
 - **Scans for security problems** with CodeQL, npm audit, pip-audit, Bandit and GitHub's dependency review.
 - **Reviews the code with AI** (Google Gemini's free tier by default, or Claude), posting inline comments on real issues (with one-click suggested fixes) and a summary with a 1–10 score.
 - **Finds test gaps**: functions whose logic changed but no test covers the change.
+- **Checks instead of guessing.** Suspected bugs are proven with a test Watchdog writes and runs, false alarms are dropped, and changed lines are deliberately broken to see whether the tests notice.
 - **Summarizes** every check in one table.
 
 Adding it to a repository takes one small workflow file. Repos without their own linter configs get sensible defaults.
@@ -38,22 +39,26 @@ Adding it to a repository takes one small workflow file. Repos without their own
 
 Pass these under `with:` in the workflow above.
 
-| Input               | Default            | What it does                                                                              |
-| ------------------- | ------------------ | ----------------------------------------------------------------------------------------- |
-| `auto-fix`          | `true`             | Commit formatter and safe lint fixes back to the PR branch (same-repo PRs only).          |
-| `fail-on-lint`      | `true`             | Fail when lint or formatting problems remain after auto-fix.                              |
-| `ai-review`         | `true`             | Run the AI code review.                                                                   |
-| `test-gap`          | `true`             | Run the test-gap finder.                                                                  |
-| `codeql`            | `true`             | Run CodeQL for the languages that changed.                                                |
-| `dependency-review` | `true`             | Fail on newly added dependencies with high-severity vulnerabilities.                      |
-| `ai-provider`       | `auto`             | `auto` (Gemini if `GEMINI_API_KEY` is set, else Claude), `gemini`, or `anthropic`.        |
-| `model`             | (provider default) | Model override. Defaults: `gemini-3.8-flash` (free tier) or `claude-opus-5-5`.            |
-| `min-severity`      | `minor`            | Lowest AI finding severity posted inline: `critical`, `major`, `minor`, `nit`, or `none`. |
-| `max-comments`      | `15`               | Maximum AI inline comments per run. The most severe are kept.                             |
-| `fail-on-severity`  | `none`             | Fail the AI review on findings at this severity or worse.                                 |
-| `test-gap-fail-on`  | `none`             | Fail the test-gap check on gaps at this risk or higher: `low`, `medium`, `high`.          |
-| `ignore-paths`      | (none)             | Globs the AI review and test-gap finder skip.                                             |
-| `watchdog-ref`      | `main`             | Pin Watchdog to a tag or commit.                                                          |
+| Input               | Default            | What it does                                                                                    |
+| ------------------- | ------------------ | ----------------------------------------------------------------------------------------------- |
+| `auto-fix`          | `true`             | Commit formatter and safe lint fixes back to the PR branch (same-repo PRs only).                |
+| `fail-on-lint`      | `true`             | Fail when lint or formatting problems remain after auto-fix.                                    |
+| `ai-review`         | `true`             | Run the AI code review.                                                                         |
+| `test-gap`          | `true`             | Run the test-gap finder.                                                                        |
+| `codeql`            | `true`             | Run CodeQL for the languages that changed.                                                      |
+| `dependency-review` | `true`             | Fail on newly added dependencies with high-severity vulnerabilities.                            |
+| `ai-provider`       | `auto`             | `auto` (Gemini if `GEMINI_API_KEY` is set, else Claude), `gemini`, or `anthropic`.              |
+| `model`             | (provider default) | Model override. Defaults: `gemini-3.8-flash` (free tier) or `claude-opus-5-5`.                  |
+| `min-severity`      | `minor`            | Lowest AI finding severity posted inline: `critical`, `major`, `minor`, `nit`, or `none`.       |
+| `max-comments`      | `15`               | Maximum AI inline comments per run. The most severe are kept.                                   |
+| `fail-on-severity`  | `none`             | Fail the AI review on findings at this severity or worse.                                       |
+| `test-gap-fail-on`  | `none`             | Fail the test-gap check on gaps at this risk or higher: `low`, `medium`, `high`.                |
+| `verify-findings`   | `true`             | Prove suspected bugs with a test (needs an AI key and a supported test runner).                 |
+| `mutation-testing`  | `true`             | Run the mutation check on changed lines.                                                        |
+| `max-mutants`       | `30`               | Maximum deliberate breaks per PR.                                                               |
+| `setup-command`     | (auto)             | Command that installs the project's dependencies for test runs, e.g. `npm ci && npm run build`. |
+| `ignore-paths`      | (none)             | Globs the AI review and test-gap finder skip.                                                   |
+| `watchdog-ref`      | `main`             | Pin Watchdog to a tag or commit.                                                                |
 
 Optional secret: `WATCHDOG_PUSH_TOKEN`, a fine-grained token with contents write access. With GitHub's default token, the run started by the auto-fix commit waits for someone to approve it under the Actions tab. Commits pushed with this token start their runs normally.
 
@@ -105,6 +110,35 @@ For each function the PR changed, Watchdog finds its test files (by name and by 
 
 Untested functions get an inline comment, and a summary table lists every changed function.
 
+## Proof, not guesses
+
+Most AI reviewers only read code, so every comment is an opinion. Watchdog runs your tests to check its claims. Both checks support **Vitest, Jest and pytest**, and install the project's dependencies first (override with `setup-command`).
+
+### Proven findings
+
+For each suspected bug (category bug, security, error handling or concurrency), the AI writes one test that asserts the correct behavior, and Watchdog runs it against the PR's code:
+
+| Result                 | What happens                                                                                         |
+| ---------------------- | ---------------------------------------------------------------------------------------------------- |
+| The test **fails**     | The finding is posted as **✅ Confirmed by a failing test**, with the test and its output attached.  |
+| The test **passes**    | The suspected bug isn't there. The finding is dropped as a false alarm and listed under "dismissed". |
+| The test **can't run** | The AI sees the error and gets one more try. If that fails too, the finding is posted unverified.    |
+
+When a finding includes a suggested fix, Watchdog also applies the fix, runs the proof test and the file's existing tests, and marks it **🔧 Suggested fix verified** if they pass. Proof tests are temporary: they're deleted after running and never committed.
+
+### Mutation check on changed lines
+
+Coverage tools tell you a line _ran_ during the tests, not that any test _checked_ it. For each line the PR adds, Watchdog makes small deliberate breaks (`>` → `<=`, `&&` → `||`, `==` → `!=`, `true` → `false`, `+` → `-`) and runs that file's tests:
+
+- A test fails: the change was **caught**, good.
+- Every test still passes: nothing checks that line. Watchdog comments on it, showing the change that went unnoticed, and flags the function as a test gap even if a test mentions it.
+
+The summary shows how many breaks were caught. This check needs no AI, so it's free and runs on every PR, including fork PRs. It's capped by `max-mutants` and a time budget, and every file is restored after each run.
+
+### Safety
+
+Proof tests are AI-written code, and both checks run the PR's own code. Test processes get an environment with every token, API key and Action input removed. GitHub doesn't give secrets to workflows on fork PRs, so the AI-written proof tests only run on PRs from branches in your own repository.
+
 ## Run it locally
 
 ```bash
@@ -121,6 +155,8 @@ cd ../watchdog
 GEMINI_API_KEY=... npm run local -- --task review --repo ../my-project      # or ANTHROPIC_API_KEY=...
 GEMINI_API_KEY=... npm run local -- --task test-gap --repo ../my-project
 npm run local -- --task test-gap --repo ../my-project --no-ai          # rule checks only
+npm run local -- --task test-gap --repo ../my-project --no-ai --mutate # + mutation check (free)
+GEMINI_API_KEY=... npm run local -- --task review --repo ../my-project --verify   # + proof tests
 
 # Pre-commit hook: auto-fix staged files, block the commit if problems remain
 scripts/install-hook.sh ../my-project
@@ -137,6 +173,7 @@ scripts/lint.sh                  Runs each language's linters and formatters (ch
 scripts/security.sh              npm audit, pip-audit, Bandit
 scripts/install-hook.sh          Installs the pre-commit hook
 configs/                         Default linter configs and the annotation problem matcher
+src/verify/                      Test runners, proof tests and the mutation check
 src/agent/                       Repository tools (read, search, list, diff) and the exploration loop
 src/ai/                          AI providers: Gemini (OpenAI-compatible API, free tier) and Claude
 src/review/                      AI code review: collect the PR, run the model, validate findings, report
@@ -157,6 +194,8 @@ npm run build      # bundle to dist/index.cjs; commit dist/ so the Action can ru
 
 - **Gemini's free tier** has tight rate limits that Google changes often; Watchdog uses smaller prompts and fewer exploration rounds on it, and retries when throttled. On the free tier, [Google may use what you send to improve its products and humans may review it](https://ai.google.dev/gemini-api/terms), so use a paid key or Claude for private code you don't want shared.
 - With Claude, the AI checks cost money per PR. Larger PRs and more exploration cost more; `max-iterations`, `ignore-paths` and the prompt budget keep this bounded.
+- Proof tests and the mutation check need the project's tests to run in CI: Vitest, Jest or pytest, with dependencies that install with `npm ci`, `pip install -r requirements.txt` or `pip install -e .` (or a custom `setup-command`). Other runners are skipped.
+- The mutation check only tries simple operator changes on added lines, so a high score isn't proof that tests are thorough; a surviving change is a strong sign they aren't.
 - Function detection for the test-gap finder uses patterns, not a full parser, so unusual syntax can be missed.
 - clang-tidy is advisory unless the repo provides `compile_commands.json`, because it can't know the real compiler flags otherwise.
 - CodeQL results upload only for same-repo PRs. Private repositories need GitHub Advanced Security for CodeQL and dependency review.

@@ -3,6 +3,8 @@
  *
  *   npm run local -- [--task review|test-gap] [--repo <path>] [--base <ref>] [--no-ai]
  *                    [--provider auto|gemini|anthropic] [--model <id>] [--json]
+ *                    [--mutate]   (test-gap: break changed lines on purpose and run their tests; no AI needed)
+ *                    [--verify]   (review: prove suspected bugs by writing and running a test for each)
  *
  * AI uses GEMINI_API_KEY (free tier) or ANTHROPIC_API_KEY from the environment.
  *
@@ -22,6 +24,10 @@ import { collectReviewFiles } from "./review/collect.js";
 import { readLintResults } from "./review/lintResults.js";
 import { reviewComments, reviewSummaryMarkdown, validateFindings } from "./review/report.js";
 import { reviewPr, summarize } from "./review/review.js";
+import { runMutations } from "./verify/mutate.js";
+import { applyMutations, mutationComments, mutationMarkdown } from "./verify/mutationReport.js";
+import { proveFindings } from "./verify/prove.js";
+import { detectRunners } from "./verify/runner.js";
 
 const { values } = parseArgs({
   options: {
@@ -32,6 +38,8 @@ const { values } = parseArgs({
     provider: { type: "string", default: "auto" },
     model: { type: "string" },
     json: { type: "boolean", default: false },
+    mutate: { type: "boolean", default: false },
+    verify: { type: "boolean", default: false },
     "max-functions": { type: "string", default: "40" },
     "lint-results": { type: "string" },
   },
@@ -83,10 +91,29 @@ async function testGap(): Promise<void> {
     },
     ai ? (symbols) => judge(symbols, { provider: ai, repoRoot: root }) : undefined,
   );
+  let mutationText = "";
+  const comments = inlineComments(result);
+  if (values.mutate) {
+    const runners = detectRunners(root);
+    if (runners.size === 0) console.warn("--mutate: no Vitest, Jest or pytest install found in the repo.");
+    else {
+      const report = await runMutations(files, {
+        root,
+        repo: fsRepo(root),
+        runners,
+        ignorePaths: [],
+        maxMutants: 30,
+        budgetMs: 600_000,
+        testTimeoutMs: 120_000,
+      });
+      applyMutations(result, report);
+      mutationText = "\n" + mutationMarkdown(report);
+      comments.splice(0, comments.length, ...inlineComments(result), ...mutationComments(report));
+    }
+  }
   if (values.json) return console.log(JSON.stringify(result.findings, null, 2));
 
-  console.log(summaryMarkdown(result));
-  const comments = inlineComments(result);
+  console.log(summaryMarkdown(result) + mutationText);
   if (comments.length > 0) {
     console.log("\n## Inline comments that would be posted\n");
     for (const c of comments) console.log(`### ${c.path}:${c.line}\n${c.body.replace(/^<!--.*-->\n/, "")}\n`);
@@ -118,9 +145,30 @@ async function review(): Promise<void> {
   };
   const { findings: raw, toolCalls } = await reviewPr(pr, collected, options);
   const findings = validateFindings(raw, reviewable);
+  if (values.verify) {
+    const runners = detectRunners(root);
+    if (runners.size === 0) console.warn("--verify: no Vitest, Jest or pytest install found in the repo.");
+    else {
+      const proofs = await proveFindings(findings, {
+        provider: ai,
+        root,
+        repo: fsRepo(root),
+        runners,
+        files: reviewable,
+        maxProofs: 5,
+        testTimeoutMs: 120_000,
+      });
+      for (const [i, proof] of proofs) findings[i]!.proof = proof;
+    }
+  }
   if (values.json) return console.log(JSON.stringify(findings, null, 2));
 
-  const summary = await summarize(pr, reviewable, findings, options);
+  const summary = await summarize(
+    pr,
+    reviewable,
+    findings.filter((f) => f.proof?.status !== "refuted"),
+    options,
+  );
   const comments = reviewComments(findings, "nit", 100);
   console.log(
     reviewSummaryMarkdown({

@@ -1,4 +1,5 @@
 import type { InlineComment } from "../report.js";
+import type { Proof } from "../verify/prove.js";
 import type { ReviewFile } from "./collect.js";
 import { SEVERITIES, type RawFinding, type ReviewSummary, type Severity } from "./review.js";
 
@@ -20,6 +21,28 @@ const VERDICT_LABEL = {
 export interface Finding extends RawFinding {
   /** False when the cited line isn't in the diff; the finding is shown in the summary only. */
   inline: boolean;
+  /** Set when Watchdog tried to prove the finding with a test. */
+  proof?: Proof;
+}
+
+const isRefuted = (f: Finding) => f.proof?.status === "refuted";
+
+function proofLabel(f: Finding): string {
+  if (f.proof?.status !== "confirmed") return "";
+  const fix =
+    f.proof.fixVerified === true
+      ? " · 🔧 Suggested fix verified"
+      : f.proof.fixVerified === false
+        ? " · ⚠️ Suggested fix didn't pass the test"
+        : "";
+  return ` · ✅ Confirmed by a failing test${fix}`;
+}
+
+function proofDetails(f: Finding): string {
+  const p = f.proof;
+  if (p?.status !== "confirmed" || !p.testCode) return "";
+  const lang = /\.py$/.test(f.path) ? "python" : /\.tsx?$/.test(f.path) ? "ts" : "js";
+  return `\n\n<details><summary>Test that fails on this PR's code</summary>\n\n${p.note ? `${p.note}\n\n` : ""}\`\`\`${lang}\n${p.testCode.trim()}\n\`\`\`\n\nOutput:\n\`\`\`\n${(p.output ?? "").trim().split("\n").slice(-15).join("\n")}\n\`\`\`\n</details>`;
 }
 
 /**
@@ -78,11 +101,12 @@ export function isDuplicate(c: InlineComment, existingBodies: string[]): boolean
 export function reviewComments(findings: Finding[], minSeverity: Severity, maxComments: number): InlineComment[] {
   const threshold = SEVERITIES.indexOf(minSeverity);
   return sortFindings(findings)
-    .filter((f) => f.inline && SEVERITIES.indexOf(f.severity) <= threshold)
+    .filter((f) => f.inline && !isRefuted(f) && SEVERITIES.indexOf(f.severity) <= threshold)
     .slice(0, maxComments)
     .map((f) => {
-      let body = `${key(f)}\n**${SEVERITY_LABEL[f.severity]} · ${f.category}** — ${f.title}\n\n${f.body}`;
+      let body = `${key(f)}\n**${SEVERITY_LABEL[f.severity]} · ${f.category}${proofLabel(f)}** — ${f.title}\n\n${f.body}`;
       if (f.suggestion.trim()) body += `\n\n\`\`\`suggestion\n${f.suggestion.replace(/\n+$/, "")}\n\`\`\``;
+      body += proofDetails(f);
       return {
         path: f.path,
         line: f.line,
@@ -103,7 +127,11 @@ export function reviewSummaryMarkdown(args: {
   toolCalls: number;
   model: string;
 }): string {
-  const { summary, findings, postedKeys, filesReviewed, listed, toolCalls, model } = args;
+  const { summary, postedKeys, filesReviewed, listed, toolCalls, model } = args;
+  // Findings whose own test passed are false alarms: listed separately, not counted.
+  const findings = args.findings.filter((f) => !isRefuted(f));
+  const dismissed = args.findings.filter(isRefuted);
+  const confirmed = findings.filter((f) => f.proof?.status === "confirmed").length;
   const lines = [REVIEW_SUMMARY_MARKER, "## 🐕 Watchdog code review", ""];
 
   if (summary) {
@@ -117,14 +145,23 @@ export function reviewSummaryMarkdown(args: {
       ([, n]) => n > 0,
     );
     lines.push(
-      `**${findings.length} finding(s):** ${counts.map(([s, n]) => `${SEVERITY_LABEL[s]} ${n}`).join(" · ")}`,
+      `**${findings.length} finding(s):** ${counts.map(([s, n]) => `${SEVERITY_LABEL[s]} ${n}`).join(" · ")}` +
+        (confirmed > 0 ? ` · **${confirmed} confirmed by a failing test**` : ""),
       "",
     );
-    lines.push("| Severity | Location | Issue |", "|---|---|---|");
+    lines.push("| Severity | Location | Issue | Proof |", "|---|---|---|---|");
     for (const f of sortFindings(findings)) {
       const where = postedKeys.has(key(f)) ? "" : f.inline ? " _(not posted inline)_" : " _(line not in diff)_";
+      const proof =
+        f.proof?.status === "confirmed"
+          ? f.proof.fixVerified
+            ? "✅ Confirmed · 🔧 fix verified"
+            : "✅ Confirmed"
+          : f.proof
+            ? "❔ Couldn't test"
+            : "—";
       lines.push(
-        `| ${SEVERITY_LABEL[f.severity]} | \`${f.path}:${f.line}\` | ${f.title.replace(/\|/g, "\\|")}${where} |`,
+        `| ${SEVERITY_LABEL[f.severity]} | \`${f.path}:${f.line}\` | ${f.title.replace(/\|/g, "\\|")}${where} | ${proof} |`,
       );
     }
     const generalOnes = sortFindings(findings).filter((f) => !f.inline);
@@ -133,6 +170,16 @@ export function reviewSummaryMarkdown(args: {
       for (const f of generalOnes) lines.push(`**${f.title}** (\`${f.path}:${f.line}\`): ${f.body}`, "");
       lines.push("</details>");
     }
+  }
+
+  if (dismissed.length > 0) {
+    lines.push(
+      "",
+      `<details><summary>${dismissed.length} suspected issue(s) dismissed: Watchdog wrote a test for each and it passed</summary>`,
+      "",
+      ...dismissed.map((f) => `- \`${f.path}:${f.line}\` ${f.title}`),
+      "</details>",
+    );
   }
 
   if (summary?.strengths.length) lines.push("", "**What's good**", ...summary.strengths.map((s) => `- ${s}`));

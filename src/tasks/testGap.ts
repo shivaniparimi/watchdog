@@ -6,6 +6,9 @@ import { findTestGaps, isGap, type Judge } from "../pipeline.js";
 import { fsRepo } from "../repo.js";
 import { inlineComments, shouldFail, SUMMARY_MARKER, summaryMarkdown } from "../report.js";
 import type { Config } from "../types.js";
+import { runMutations } from "../verify/mutate.js";
+import { applyMutations, mutationComments, mutationMarkdown } from "../verify/mutationReport.js";
+import { detectRunners } from "../verify/runner.js";
 import { fetchHeadContents, type TaskContext } from "./context.js";
 
 export async function runTestGap(ctx: TaskContext): Promise<void> {
@@ -23,21 +26,43 @@ export async function runTestGap(ctx: TaskContext): Promise<void> {
   const sources = ctx.files
     .filter((f) => f.status !== "removed" && classifyFile(f.path, config.ignorePaths) === "source")
     .map((f) => f.path);
-  const repo = fsRepo(process.env.GITHUB_WORKSPACE ?? process.cwd(), await fetchHeadContents(ctx, sources));
+  const root = process.env.GITHUB_WORKSPACE ?? process.cwd();
+  const repo = fsRepo(root, await fetchHeadContents(ctx, sources));
 
   let judgeFn: Judge | undefined;
   if (ctx.ai) {
     const provider = ctx.ai;
-    const repoRoot = process.env.GITHUB_WORKSPACE ?? process.cwd();
-    judgeFn = (symbols) => judge(symbols, { provider, repoRoot });
+    judgeFn = (symbols) => judge(symbols, { provider, repoRoot: root });
   } else {
     core.warning("No AI key given (gemini-api-key or anthropic-api-key); running test-gap rule checks only.");
   }
 
   const result = await findTestGaps(ctx.files, repo, config, judgeFn);
-  const summary = summaryMarkdown(result);
 
-  const onPr = await postInlineComments(ctx.octokit, ctx.pr, inlineComments(result), {
+  // Mutation check: break changed lines on purpose and see whether any test notices. No AI needed.
+  let summary = summaryMarkdown(result);
+  const comments = inlineComments(result);
+  if (core.getBooleanInput("mutation-testing")) {
+    const runners = detectRunners(root);
+    if (runners.size === 0) {
+      core.info("Skipping the mutation check: no Vitest, Jest or pytest install found.");
+    } else {
+      const report = await runMutations(ctx.files, {
+        root,
+        repo,
+        runners,
+        ignorePaths: config.ignorePaths,
+        maxMutants: Number(core.getInput("max-mutants") || 30),
+        budgetMs: Number(core.getInput("mutation-budget") || 600) * 1000,
+        testTimeoutMs: Number(core.getInput("test-timeout") || 120) * 1000,
+      });
+      applyMutations(result, report);
+      summary = summaryMarkdown(result) + "\n" + mutationMarkdown(report);
+      comments.splice(0, comments.length, ...inlineComments(result), ...mutationComments(report));
+    }
+  }
+
+  const onPr = await postInlineComments(ctx.octokit, ctx.pr, comments, {
     reviewBody: (n) =>
       `🧪 Test gap finder: ${n} changed function(s) look untested. See the summary comment for the full list.`,
     isPosted: (c, bodies) => bodies.some((b) => b.includes(c.key)),

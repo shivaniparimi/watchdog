@@ -10,6 +10,9 @@ import {
   validateFindings,
 } from "../review/report.js";
 import { reviewPr, SEVERITIES, summarize, type Severity } from "../review/review.js";
+import { fsRepo } from "../repo.js";
+import { proveFindings } from "../verify/prove.js";
+import { detectRunners } from "../verify/runner.js";
 import { fetchHeadContents, type TaskContext } from "./context.js";
 
 function severityInput(name: string, fallback: Severity | "none"): Severity | "none" {
@@ -64,7 +67,38 @@ export async function runReview(ctx: TaskContext): Promise<void> {
   };
   const { findings: raw, toolCalls } = await reviewPr(pr, collected, options);
   const findings = validateFindings(raw, reviewed);
-  const summary = await summarize(pr, reviewed, findings, options);
+
+  // Prove suspected bugs by writing and running a test for each, when the repo's tests can run here.
+  if (core.getBooleanInput("verify-findings")) {
+    const runners = detectRunners(options.repoRoot);
+    if (runners.size === 0) {
+      core.info(
+        "Skipping proof tests: no Vitest, Jest or pytest install found (install the project's dependencies first).",
+      );
+    } else {
+      const proofs = await proveFindings(findings, {
+        provider: ai,
+        root: options.repoRoot,
+        repo: fsRepo(options.repoRoot),
+        runners,
+        files: reviewed,
+        maxProofs: Number(core.getInput("max-proofs") || 5),
+        testTimeoutMs: Number(core.getInput("test-timeout") || 120) * 1000,
+      });
+      for (const [i, proof] of proofs) findings[i]!.proof = proof;
+      const counts = [...proofs.values()].reduce<Record<string, number>>(
+        (acc, p) => ((acc[p.status] = (acc[p.status] ?? 0) + 1), acc),
+        {},
+      );
+      core.info(`Proof tests: ${JSON.stringify(counts)}`);
+    }
+  }
+  const summary = await summarize(
+    pr,
+    reviewed,
+    findings.filter((f) => f.proof?.status !== "refuted"),
+    options,
+  );
 
   const comments = minSeverity === "none" ? [] : reviewComments(findings, minSeverity, maxComments);
   const postedKeys = await postInlineComments(ctx.octokit, ctx.pr, comments, {
