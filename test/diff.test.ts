@@ -3,14 +3,29 @@ import { parsePatch, splitGitDiff } from "../src/diff.js";
 
 describe("parsePatch", () => {
   it("numbers added and context lines by their new-file position", () => {
-    const p = parsePatch(["@@ -10,4 +10,5 @@ function total(", " const a = 1;", "-const b = 2;", "+const b = 3;", "+const c = 4;", " return a;"].join("\n"));
+    const p = parsePatch(
+      [
+        "@@ -10,4 +10,5 @@ function total(",
+        " const a = 1;",
+        "-const b = 2;",
+        "+const b = 3;",
+        "+const c = 4;",
+        " return a;",
+      ].join("\n"),
+    );
     expect([...p.added]).toEqual([11, 12]);
     expect([...p.commentable].sort((a, b) => a - b)).toEqual([10, 11, 12, 13]);
-    expect(p.entries.find((e) => e.kind === "-")).toEqual({ kind: "-", newLine: 11, text: "const b = 2;" });
+    expect(p.entries.find((e) => e.kind === "-")).toEqual({
+      kind: "-",
+      newLine: 11,
+      text: "const b = 2;",
+    });
   });
 
   it("handles multiple hunks, single-line hunk headers and no-newline markers", () => {
-    const p = parsePatch(["@@ -1 +1 @@", "-a", "+b", "\\ No newline at end of file", "@@ -20,2 +20,3 @@", " x", "+y", " z"].join("\n"));
+    const p = parsePatch(
+      ["@@ -1 +1 @@", "-a", "+b", "\\ No newline at end of file", "@@ -20,2 +20,3 @@", " x", "+y", " z"].join("\n"),
+    );
     expect([...p.added]).toEqual([1, 21]);
     expect(p.commentable.has(22)).toBe(true);
     expect(p.entries).toHaveLength(5);

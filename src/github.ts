@@ -1,5 +1,5 @@
 import type { getOctokit } from "@actions/github";
-import { SUMMARY_MARKER, type InlineComment } from "./report.js";
+import type { InlineComment } from "./report.js";
 import type { ChangedFile } from "./types.js";
 
 type Octokit = ReturnType<typeof getOctokit>;
@@ -18,7 +18,11 @@ export async function listPrFiles(octokit: Octokit, pr: PrRef): Promise<ChangedF
     pull_number: pr.pullNumber,
     per_page: 100,
   });
-  return files.map((f) => ({ path: f.filename, status: f.status, patch: f.patch }));
+  return files.map((f) => ({
+    path: f.filename,
+    status: f.status,
+    patch: f.patch,
+  }));
 }
 
 /** Fetch a file's exact content at the PR head (the checkout may be a merge commit with shifted lines). */
@@ -41,17 +45,47 @@ function hasStatus(err: unknown, status: number): boolean {
   return typeof err === "object" && err !== null && "status" in err && err.status === status;
 }
 
-/** Post inline comments as one review, skipping any this action already posted. Returns how many were posted. */
-export async function postInlineComments(octokit: Octokit, pr: PrRef, comments: InlineComment[]): Promise<number> {
+export interface PostOptions {
+  /** Text of the review that holds the inline comments. */
+  reviewBody: (count: number) => string;
+  /** Has an earlier run already posted this comment? Gets the bodies of all existing review comments. */
+  isPosted: (comment: InlineComment, existingBodies: string[]) => boolean;
+}
+
+function reviewComment(c: InlineComment) {
+  return {
+    path: c.path,
+    line: c.line,
+    side: "RIGHT" as const,
+    ...(c.startLine !== undefined ? { start_line: c.startLine, start_side: "RIGHT" as const } : {}),
+    body: c.body,
+  };
+}
+
+/**
+ * Post inline comments as one review, skipping any an earlier run already posted.
+ * Returns the keys of comments that are now on the PR (posted now or before).
+ */
+export async function postInlineComments(
+  octokit: Octokit,
+  pr: PrRef,
+  comments: InlineComment[],
+  options: PostOptions,
+): Promise<Set<string>> {
   const existing = await octokit.paginate(octokit.rest.pulls.listReviewComments, {
     owner: pr.owner,
     repo: pr.repo,
     pull_number: pr.pullNumber,
     per_page: 100,
   });
-  const posted = new Set(existing.map((c) => c.body.match(/<!-- test-gap:[^>]+ -->/)?.[0]).filter(Boolean));
-  const fresh = comments.filter((c) => !posted.has(c.key));
-  if (fresh.length === 0) return 0;
+  const bodies = existing.map((c) => c.body);
+  const onPr = new Set<string>();
+  const fresh: InlineComment[] = [];
+  for (const c of comments) {
+    if (options.isPosted(c, bodies)) onPr.add(c.key);
+    else fresh.push(c);
+  }
+  if (fresh.length === 0) return onPr;
 
   try {
     await octokit.rest.pulls.createReview({
@@ -60,16 +94,16 @@ export async function postInlineComments(octokit: Octokit, pr: PrRef, comments: 
       pull_number: pr.pullNumber,
       commit_id: pr.headSha,
       event: "COMMENT",
-      body: `🧪 Test gap finder: ${fresh.length} changed function(s) look untested. See the summary comment for the full list.`,
-      comments: fresh.map((c) => ({ path: c.path, line: c.line, side: "RIGHT" as const, body: c.body })),
+      body: options.reviewBody(fresh.length),
+      comments: fresh.map(reviewComment),
     });
-    return fresh.length;
+    for (const c of fresh) onPr.add(c.key);
+    return onPr;
   } catch (err) {
     // 422 means GitHub rejected at least one comment's line; the whole review fails, so post one at a time.
     if (!hasStatus(err, 422)) throw err;
   }
 
-  let count = 0;
   for (const c of fresh) {
     try {
       await octokit.rest.pulls.createReviewComment({
@@ -77,31 +111,38 @@ export async function postInlineComments(octokit: Octokit, pr: PrRef, comments: 
         repo: pr.repo,
         pull_number: pr.pullNumber,
         commit_id: pr.headSha,
-        path: c.path,
-        line: c.line,
-        side: "RIGHT",
-        body: c.body,
+        ...reviewComment(c),
       });
-      count++;
+      onPr.add(c.key);
     } catch (err) {
       console.warn(`Couldn't comment on ${c.path}:${c.line}: ${err instanceof Error ? err.message : err}`);
     }
   }
-  return count;
+  return onPr;
 }
 
-/** Create the summary comment, or update the one posted on an earlier run. */
-export async function upsertSummary(octokit: Octokit, pr: PrRef, body: string): Promise<void> {
+/** Create the summary comment identified by `marker`, or update the one posted on an earlier run. */
+export async function upsertSummary(octokit: Octokit, pr: PrRef, marker: string, body: string): Promise<void> {
   const comments = await octokit.paginate(octokit.rest.issues.listComments, {
     owner: pr.owner,
     repo: pr.repo,
     issue_number: pr.pullNumber,
     per_page: 100,
   });
-  const mine = comments.find((c) => c.body?.includes(SUMMARY_MARKER));
+  const mine = comments.find((c) => c.body?.includes(marker));
   if (mine) {
-    await octokit.rest.issues.updateComment({ owner: pr.owner, repo: pr.repo, comment_id: mine.id, body });
+    await octokit.rest.issues.updateComment({
+      owner: pr.owner,
+      repo: pr.repo,
+      comment_id: mine.id,
+      body,
+    });
   } else {
-    await octokit.rest.issues.createComment({ owner: pr.owner, repo: pr.repo, issue_number: pr.pullNumber, body });
+    await octokit.rest.issues.createComment({
+      owner: pr.owner,
+      repo: pr.repo,
+      issue_number: pr.pullNumber,
+      body,
+    });
   }
 }

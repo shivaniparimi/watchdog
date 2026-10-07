@@ -16,7 +16,13 @@ const sym: AnalyzedSymbol = {
   body: "export function applyDiscount(...) { ... }",
   status: "needs-judgment",
   candidateTests: ["src/cart.test.ts"],
-  evidence: [{ path: "src/cart.test.ts", changedInPr: false, excerpt: '8:   expect(applyDiscount(10, "HALF")).toBe(5);' }],
+  evidence: [
+    {
+      path: "src/cart.test.ts",
+      changedInPr: false,
+      excerpt: '8:   expect(applyDiscount(10, "HALF")).toBe(5);',
+    },
+  ],
 };
 
 /** A client whose HTTP layer returns `reply` as Claude's text and records the request body. */
@@ -37,7 +43,10 @@ function fakeClient(reply: unknown, stopReason = "end_turn") {
         stop_sequence: null,
         usage: { input_tokens: 10, output_tokens: 10 },
       };
-      return new Response(JSON.stringify(message), { status: 200, headers: { "content-type": "application/json" } });
+      return new Response(JSON.stringify(message), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
     },
   });
   return { client, requests };
@@ -47,14 +56,30 @@ describe("judge", () => {
   it("sends a structured-output request and maps verdicts by id", async () => {
     const { client, requests } = fakeClient({
       verdicts: [
-        { id: sym.id, covered: false, risk: "medium", reason: "TENOFF branch untested.", suggested_test: "it('tenoff', ...)" },
-        { id: "not-asked-about", covered: false, risk: "high", reason: "x", suggested_test: "" },
+        {
+          id: sym.id,
+          covered: false,
+          risk: "medium",
+          reason: "TENOFF branch untested.",
+          suggested_test: "it('tenoff', ...)",
+        },
+        {
+          id: "not-asked-about",
+          covered: false,
+          risk: "high",
+          reason: "x",
+          suggested_test: "",
+        },
       ],
     });
     const verdicts = await judge([sym], { client });
 
     expect(verdicts.size).toBe(1);
-    expect(verdicts.get(sym.id)).toMatchObject({ covered: false, risk: "medium", source: "ai" });
+    expect(verdicts.get(sym.id)).toMatchObject({
+      covered: false,
+      risk: "medium",
+      source: "ai",
+    });
 
     const body = requests[0];
     expect(body.model).toBe("claude-opus-5-5");
@@ -66,7 +91,17 @@ describe("judge", () => {
   });
 
   it("forces risk to none when Claude says the change is covered", async () => {
-    const { client } = fakeClient({ verdicts: [{ id: sym.id, covered: true, risk: "low", reason: "Tested.", suggested_test: "" }] });
+    const { client } = fakeClient({
+      verdicts: [
+        {
+          id: sym.id,
+          covered: true,
+          risk: "low",
+          reason: "Tested.",
+          suggested_test: "",
+        },
+      ],
+    });
     expect((await judge([sym], { client })).get(sym.id)?.risk).toBe("none");
   });
 

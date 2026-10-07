@@ -1,30 +1,52 @@
-name: Watchdog Test Gap Finder
-description: Flags functions changed in a pull request that no test covers.
+name: Watchdog
+description: AI code review and test-gap detection for pull requests, powered by Claude.
 branding:
-  icon: check-square
-  color: green
+  icon: shield
+  color: blue
 inputs:
+  task:
+    description: What to run, "review" (AI code review) or "test-gap" (find changed functions with no test).
+    default: review
   github-token:
     description: Token used to read the PR and post comments.
     default: ${{ github.token }}
   anthropic-api-key:
-    description: Anthropic API key. Without it, only the rule checks run.
+    description: Anthropic API key. Without it, the review is skipped and test-gap runs rule checks only.
     required: false
   model:
-    description: Claude model used to judge coverage.
+    description: Claude model to use.
     default: claude-opus-5-5
+  ignore-paths:
+    description: Glob patterns to skip, one per line or comma-separated.
+    default: ""
+  lint-results:
+    description: "[review] Directory with the lint job's results (summary.tsv and logs), passed to the reviewer."
+    default: ""
+  min-severity:
+    description: "[review] Lowest severity posted as an inline comment: critical, major, minor, nit, or none."
+    default: minor
+  max-comments:
+    description: "[review] Maximum inline comments per run. The most severe are kept."
+    default: "15"
+  max-review-chars:
+    description: "[review] Size budget for the diff and file context sent to Claude, in characters."
+    default: "300000"
+  fail-on-severity:
+    description: "[review] Fail the check when a finding at this severity or worse exists (critical, major, minor, nit), or none."
+    default: none
   fail-on:
-    description: Fail the check when a gap at this risk or higher is found (none, low, medium, high).
+    description: "[test-gap] Fail the check on gaps at this risk or higher (low, medium, high), or none."
     default: none
   max-functions:
-    description: Maximum number of changed functions to check per PR.
+    description: "[test-gap] Maximum number of changed functions checked per PR."
     default: "40"
-  ignore-paths:
-    description: Extra glob patterns to skip, one per line or comma-separated.
-    default: ""
 outputs:
+  score:
+    description: "[review] Merge-readiness score from 1 to 10."
+  findings:
+    description: "[review] Number of findings."
   gaps:
-    description: Number of changed functions that look untested.
+    description: "[test-gap] Number of changed functions that look untested."
 runs:
   using: node24
   main: dist/index.cjs

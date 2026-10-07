@@ -1,0 +1,30 @@
+{
+  "problemMatcher": [
+    {
+      "owner": "watchdog-lint",
+      "pattern": [
+        {
+          "regexp": "^(?:\\[(?:WARN|ERROR)\\]\\s+)?([^\\s:]+\\.[A-Za-z0-9]+):(\\d+):(?:(\\d+):)?\\s*(?:(error|warning|note)\\s*:\\s*)?(.+)$",
+          "file": 1,
+          "line": 2,
+          "column": 3,
+          "severity": 4,
+          "message": 5
+        }
+      ]
+    },
+    {
+      "owner": "watchdog-tsc",
+      "pattern": [
+        {
+          "regexp": "^([^\\s(]+)\\((\\d+),(\\d+)\\):\\s+(error|warning)\\s+(TS\\d+:.+)$",
+          "file": 1,
+          "line": 2,
+          "column": 3,
+          "severity": 4,
+          "message": 5
+        }
+      ]
+    }
+  ]
+}

@@ -19,7 +19,9 @@ export interface AnalysisResult {
  */
 export function analyze(files: ChangedFile[], repo: RepoReader, config: Config): AnalysisResult {
   const changedTests = new Set(
-    files.filter((f) => f.status !== "removed" && classifyFile(f.path, config.ignorePaths) === "test").map((f) => f.path),
+    files
+      .filter((f) => f.status !== "removed" && classifyFile(f.path, config.ignorePaths) === "test")
+      .map((f) => f.path),
   );
   const sources = files.filter(
     (f) => f.status !== "removed" && f.patch && classifyFile(f.path, config.ignorePaths) === "source",
@@ -42,7 +44,12 @@ export function analyze(files: ChangedFile[], repo: RepoReader, config: Config):
       for (const testPath of candidates) {
         const testContent = repo.read(testPath);
         const excerpt = testContent ? mentionExcerpt(testContent, sym.name) : null;
-        if (excerpt) evidence.push({ path: testPath, changedInPr: changedTests.has(testPath), excerpt });
+        if (excerpt)
+          evidence.push({
+            path: testPath,
+            changedInPr: changedTests.has(testPath),
+            excerpt,
+          });
       }
 
       const status =
@@ -52,9 +59,20 @@ export function analyze(files: ChangedFile[], repo: RepoReader, config: Config):
   }
 
   // Keep the most worrying functions when a PR is too large: untested first, then needs-judgment.
-  const order = { untested: 0, "needs-judgment": 1, "covered-in-pr": 2 } as const;
-  const sorted = [...all].sort((a, b) => order[a.status] - order[b.status] || b.changedLines.length - a.changedLines.length);
+  const order = {
+    untested: 0,
+    "needs-judgment": 1,
+    "covered-in-pr": 2,
+  } as const;
+  const sorted = [...all].sort(
+    (a, b) => order[a.status] - order[b.status] || b.changedLines.length - a.changedLines.length,
+  );
   const symbols = sorted.slice(0, config.maxFunctions);
 
-  return { symbols, patches, skipped: all.length - symbols.length, sourceFilesChanged: sources.length };
+  return {
+    symbols,
+    patches,
+    skipped: all.length - symbols.length,
+    sourceFilesChanged: sources.length,
+  };
 }

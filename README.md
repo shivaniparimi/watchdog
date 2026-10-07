@@ -1,66 +1,143 @@
-# Watchdog: Test Gap Finder
+# 🐕 Watchdog
 
-A GitHub Action that flags functions a pull request changed when no test covers the change.
+Automated pull request checks for JavaScript/TypeScript, Python, Java, C/C++ and SQL. On every PR, Watchdog:
 
-It posts one inline comment on each untested function (with a suggested test) and a summary table on the PR.
+- **Lints and formats** the changed files, commits safe fixes back to the PR branch, and annotates the problems that remain.
+- **Scans for security problems** with CodeQL, npm audit, pip-audit, Bandit and GitHub's dependency review.
+- **Reviews the code with Claude**, posting inline comments on real issues (with one-click suggested fixes) and a summary with a 1–10 score.
+- **Finds test gaps**: functions whose logic changed but no test covers the change.
+- **Summarizes** every check in one table.
 
-## How it works
+Adding it to a repository takes one small workflow file. Repos without their own linter configs get sensible defaults.
 
-1. **Read the diff.** Get the PR's changed files and the real line number of every changed line.
-2. **Sort files.** Each changed file is a source file, a test file, or ignored (docs, config, generated code, migrations).
-3. **Find changed functions.** Group changed lines by the function they're in. Changes that can't affect behavior are dropped: comments, imports, logging, blank lines.
-4. **Match tests.** For each source file, find its test files by name (`cart.ts` → `cart.test.ts`, `test_cart.py`, `CartTest.java`) or by import. Go uses the package directory.
-5. **Rule check.** Each function gets one of three results:
-   - **covered-in-pr**: a test file changed in this PR mentions the function.
-   - **untested**: no matching test mentions it at all.
-   - **needs-judgment**: tests mention it but weren't updated.
-6. **Claude decides** on untested and needs-judgment functions. It reads the function's diff and the relevant test excerpts, then returns structured JSON: covered or not, risk, a one-sentence reason, and a suggested test.
-7. **Report.** One review with inline comments, plus a summary comment that's updated in place on later pushes. Comments already posted aren't repeated.
+## Add it to a repository
 
-Supported languages: TypeScript, JavaScript, Python, Go, Java.
+1. Create `.github/workflows/watchdog.yml`:
 
-## Use it in a repo
+   ```yaml
+   name: Watchdog
+   on:
+     pull_request:
+       types: [opened, synchronize, reopened]
+   permissions:
+     contents: write
+     pull-requests: write
+     security-events: write
+     actions: read
+   jobs:
+     watchdog:
+       uses: shivaniparimi/watchdog/.github/workflows/watchdog.yml@main
+       secrets: inherit
+   ```
 
-```yaml
-# .github/workflows/test-gap.yml
-on:
-  pull_request:
-    types: [opened, synchronize, reopened]
-permissions:
-  contents: read
-  pull-requests: write
-jobs:
-  test-gap:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: <your-github-user>/watchdog@v1
-        with:
-          anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
-```
+2. Add an `ANTHROPIC_API_KEY` secret (Settings → Secrets and variables → Actions) to turn on the AI review and AI test-gap checks. Without it, everything else still runs.
 
-| Input | Default | Description |
-|---|---|---|
-| `anthropic-api-key` | (none) | Without it, only the rule checks run. |
-| `model` | `claude-opus-5-5` | Claude model used to judge coverage. |
-| `fail-on` | `none` | Fail the check on gaps at this risk or higher: `low`, `medium`, `high`. |
-| `max-functions` | `40` | Maximum number of functions checked per PR. The most worrying ones are kept. |
-| `ignore-paths` | (none) | Extra globs to skip, one per line or comma-separated. |
+3. Open a pull request.
 
-Output: `gaps`, the number of functions that look untested.
+### Options
+
+Pass these under `with:` in the workflow above.
+
+| Input               | Default           | What it does                                                                              |
+| ------------------- | ----------------- | ----------------------------------------------------------------------------------------- |
+| `auto-fix`          | `true`            | Commit formatter and safe lint fixes back to the PR branch (same-repo PRs only).          |
+| `fail-on-lint`      | `true`            | Fail when lint or formatting problems remain after auto-fix.                              |
+| `ai-review`         | `true`            | Run the AI code review.                                                                   |
+| `test-gap`          | `true`            | Run the test-gap finder.                                                                  |
+| `codeql`            | `true`            | Run CodeQL for the languages that changed.                                                |
+| `dependency-review` | `true`            | Fail on newly added dependencies with high-severity vulnerabilities.                      |
+| `model`             | `claude-opus-5-5` | Claude model for the AI checks.                                                           |
+| `min-severity`      | `minor`           | Lowest AI finding severity posted inline: `critical`, `major`, `minor`, `nit`, or `none`. |
+| `max-comments`      | `15`              | Maximum AI inline comments per run. The most severe are kept.                             |
+| `fail-on-severity`  | `none`            | Fail the AI review on findings at this severity or worse.                                 |
+| `test-gap-fail-on`  | `none`            | Fail the test-gap check on gaps at this risk or higher: `low`, `medium`, `high`.          |
+| `ignore-paths`      | (none)            | Globs the AI review and test-gap finder skip.                                             |
+| `watchdog-ref`      | `main`            | Pin Watchdog to a tag or commit.                                                          |
+
+Optional secret: `WATCHDOG_PUSH_TOKEN`, a fine-grained token with contents write access. Commits pushed with GitHub's default token don't start new workflow runs, so with the default the auto-fix commit has no checks of its own. Commits pushed with this token do.
+
+## What each check does
+
+### Lint and format
+
+Only the files the PR changed are checked. If the repository has its own config for a tool, Watchdog uses it; otherwise it uses the defaults in [`configs/`](configs/).
+
+| Language                                 | Formatting (auto-fixed) | Linting                                                  |
+| ---------------------------------------- | ----------------------- | -------------------------------------------------------- |
+| JS / TS (also JSON, CSS, YAML, Markdown) | Prettier                | ESLint (+ `tsc --noEmit` when there's a `tsconfig.json`) |
+| Python                                   | Black, isort            | Flake8, mypy (advisory)                                  |
+| Java                                     | google-java-format      | Checkstyle (Google style)                                |
+| C / C++                                  | clang-format            | clang-tidy (advisory without `compile_commands.json`)    |
+| SQL                                      | SQLFluff                | SQLFluff                                                 |
+
+Problems appear as annotations on the PR's changed lines, and the job summary lists each tool's result. With `auto-fix` on, formatting fixes and safe lint fixes are committed to the PR branch as `github-actions[bot]`. Fork PRs are checked but not auto-fixed, since GitHub doesn't allow pushing to forks.
+
+### Security
+
+- **CodeQL** for each changed language (no build needed). Alerts appear in the Security tab and on the PR.
+- **npm audit**: high or critical advisories in production dependencies (`package-lock.json`).
+- **pip-audit**: known vulnerabilities in `requirements*.txt`.
+- **Bandit** on changed Python files. High-severity issues fail the job; medium ones are reported.
+- **Dependency review**: blocks newly added dependencies with high-severity vulnerabilities.
+
+### AI code review
+
+Claude reads each changed file's diff (with real line numbers), the full file for context, and the lint results. It returns structured findings: severity, category, the exact line, an explanation, and optionally a replacement that GitHub shows as a one-click **suggested change**.
+
+- Every finding's line is checked against the diff before posting. Findings on lines outside the diff are listed in the summary, not dropped.
+- All inline comments are posted together as one review. The summary comment (score, verdict, findings table, strengths, risks) is updated in place on each push.
+- A problem already commented on in an earlier run (same file and category, within 3 lines) isn't posted again.
+- The PR description and code are treated as untrusted data in the prompt.
+- Lockfiles, build output, generated code, docs and binaries are skipped. Large PRs are capped by a size budget, and skipped files are listed in the summary.
+
+### Test gaps
+
+For each function the PR changed, Watchdog finds its test files (by name and by import), then checks whether a test covers the change:
+
+1. **Rule checks** (free): a test changed in this PR mentions the function → covered. No test mentions it → untested. Tests exist but weren't updated → unclear.
+2. **Claude** decides the unclear and untested cases, rates the risk, and suggests a test in the repository's own style.
+
+Untested functions get an inline comment, and a summary table lists every changed function.
 
 ## Run it locally
 
-Compare any repo's working tree with its base branch, without opening a PR:
-
 ```bash
-npm install
-npm run local -- --repo ../my-project --base main --no-ai   # rule checks only
-ANTHROPIC_API_KEY=sk-... npm run local -- --repo ../my-project   # with Claude
-npm run local -- --repo ../my-project --json                     # raw findings
+git clone https://github.com/shivaniparimi/watchdog && cd watchdog && npm install
+
+# Lint/format changed files in another repo (needs the linters installed locally)
+cd ../my-project
+../watchdog/scripts/detect.sh main HEAD /tmp/wd-files
+FILES_DIR=/tmp/wd-files ../watchdog/scripts/lint.sh check python   # or js, java, cpp, sql
+FILES_DIR=/tmp/wd-files ../watchdog/scripts/lint.sh fix python
+
+# AI review or test gaps for your working tree vs. main (prints results, posts nothing)
+cd ../watchdog
+ANTHROPIC_API_KEY=sk-... npm run local -- --task review --repo ../my-project
+ANTHROPIC_API_KEY=sk-... npm run local -- --task test-gap --repo ../my-project
+npm run local -- --task test-gap --repo ../my-project --no-ai          # rule checks only
+
+# Pre-commit hook: auto-fix staged files, block the commit if problems remain
+scripts/install-hook.sh ../my-project
 ```
 
-## Develop
+## How it's built
+
+```
+.github/workflows/watchdog.yml   Reusable workflow: detect → lint / security / dependency review / AI review / test gaps → summary
+.github/workflows/ci.yml         Watchdog's own CI (unit tests + Watchdog on its own PRs)
+action.yml, dist/index.cjs       The Action that runs the AI tasks (task: review | test-gap)
+scripts/detect.sh                Sorts changed files by language
+scripts/lint.sh                  Runs each language's linters and formatters (check or fix)
+scripts/security.sh              npm audit, pip-audit, Bandit
+scripts/install-hook.sh          Installs the pre-commit hook
+configs/                         Default linter configs and the annotation problem matcher
+src/review/                      AI code review: collect files, call Claude, validate findings, report
+src/*.ts                         Test-gap finder: diff parsing, function detection, test matching, Claude judge
+src/tasks/, src/index.ts         Action entry point
+src/local.ts                     Local CLI
+```
+
+### Develop
 
 ```bash
 npm test           # unit tests (vitest)
@@ -68,21 +145,10 @@ npm run typecheck  # tsc
 npm run build      # bundle to dist/index.cjs; commit dist/ so the Action can run
 ```
 
-| File | Role |
-|---|---|
-| `src/diff.ts` | Parse patches into line-numbered entries |
-| `src/classify.ts` | Source / test / ignore, plus language detection |
-| `src/symbols.ts` | Find function ranges; group changed lines by function |
-| `src/testMap.ts` | Match source files to test files; extract mentions |
-| `src/analyze.ts` | Rule checks |
-| `src/judge.ts` | Claude call with structured output |
-| `src/pipeline.ts` | Puts the steps together; falls back to rule results if AI fails |
-| `src/report.ts` | Inline comments, summary, pass/fail |
-| `src/github.ts`, `src/index.ts` | Action entry point and GitHub API calls |
-| `src/local.ts` | Local CLI |
-
 ## Known limits
 
-- Functions are found with regexes, not a real parser. Unusual syntax can be missed: multi-line JS method signatures, or functions nested inside template strings. Tree-sitter would fix this.
-- A test "mentions" a function when its name appears in the test file. Very common names like `get` can match by accident.
-- Coverage reports (Istanbul, coverage.py) aren't read yet. Where a repo has them, they'd be more accurate than name matching.
+- The AI checks need an Anthropic API key and cost money per PR (larger PRs cost more). `max-comments`, `ignore-paths` and the size budget keep this bounded.
+- Function detection for the test-gap finder uses patterns, not a full parser, so unusual syntax can be missed.
+- clang-tidy is advisory unless the repo provides `compile_commands.json`, because it can't know the real compiler flags otherwise.
+- CodeQL results upload only for same-repo PRs. Private repositories need GitHub Advanced Security for CodeQL and dependency review.
+- Auto-fix commits made with the default token don't trigger new workflow runs (see `WATCHDOG_PUSH_TOKEN`).

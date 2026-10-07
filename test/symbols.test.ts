@@ -43,20 +43,20 @@ describe("findFunctions (TypeScript)", () => {
 describe("findFunctions (Python)", () => {
   it("handles multi-line signatures, nested functions and dedent", () => {
     const py = [
-      "def total(",          // 1
-      "    items,",          // 2
-      "    tax=0.1,",        // 3
-      "):",                  // 4
-      "    def line(i):",    // 5
-      "        return i.p",  // 6
-      "",                    // 7
+      "def total(", // 1
+      "    items,", // 2
+      "    tax=0.1,", // 3
+      "):", // 4
+      "    def line(i):", // 5
+      "        return i.p", // 6
+      "", // 7
       "    return sum(line(i) for i in items)", // 8
-      "",                    // 9
-      "class Cart:",         // 10
+      "", // 9
+      "class Cart:", // 10
       "    async def pay(self, user):", // 11
       "        if not user:", // 12
       "            raise ValueError()", // 13
-      "        return True",  // 14
+      "        return True", // 14
       "",
       "RATE = 3",
     ].join("\n");
@@ -70,7 +70,8 @@ describe("findFunctions (Python)", () => {
 
 describe("findFunctions (Go and Java)", () => {
   it("finds Go functions and methods", () => {
-    const go = 'package cart\n\nfunc Total(items []Item) int {\n\treturn 0\n}\n\nfunc (c *Cart) Add(i Item) {\n\tc.items = append(c.items, i)\n}\n';
+    const go =
+      "package cart\n\nfunc Total(items []Item) int {\n\treturn 0\n}\n\nfunc (c *Cart) Add(i Item) {\n\tc.items = append(c.items, i)\n}\n";
     expect(findFunctions(go, "go").map((d) => [d.name, d.start, d.end])).toEqual([
       ["Total", 3, 5],
       ["Add", 7, 9],
@@ -129,8 +130,8 @@ describe("changedSymbols", () => {
         " }",
         " ",
         " export const applyDiscount = (total: number, code?: string): number => {",
-        "-  if (code === \"HALF\") {",
-        "+  if (code === \"HALF\" || code === \"50OFF\") {",
+        '-  if (code === "HALF") {',
+        '+  if (code === "HALF" || code === "50OFF") {',
         "     return total / 2;",
         "   }",
       ].join("\n"),
@@ -154,7 +155,9 @@ describe("changedSymbols", () => {
 
   it("does not blame the next function for a deleted neighbour", () => {
     const content = "function keep() {\n  return 1;\n}\n";
-    const patch = parsePatch("@@ -1,6 +1,3 @@\n-function gone() {\n-  return 2;\n-}\n function keep() {\n   return 1;\n }");
+    const patch = parsePatch(
+      "@@ -1,6 +1,3 @@\n-function gone() {\n-  return 2;\n-}\n function keep() {\n   return 1;\n }",
+    );
     expect(changedSymbols("a.ts", "ts", content, patch)).toEqual([]);
   });
 });

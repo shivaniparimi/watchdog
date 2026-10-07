@@ -48,9 +48,9 @@ function importsModule(testContent: string, sourcePath: string, lang: Language):
     case "ts":
     case "js":
       // from '../cart/total'  /  require("./total.js")  /  from '@/cart'
-      return new RegExp(
-        `(from|require\\(|import\\()\\s*["'][^"']*\\/(${stem}|${fileStem})(\\.[cm]?[jt]sx?)?["']`,
-      ).test(testContent);
+      return new RegExp(`(from|require\\(|import\\()\\s*["'][^"']*\\/(${stem}|${fileStem})(\\.[cm]?[jt]sx?)?["']`).test(
+        testContent,
+      );
     case "python":
       // from app.cart.total import x  /  import app.cart.total  /  from app.cart import total
       return new RegExp(

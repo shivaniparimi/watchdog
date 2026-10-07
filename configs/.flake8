@@ -1,0 +1,8 @@
+# Default flake8 config, used when the repository has none of its own.
+[flake8]
+max-line-length = 100
+# E203 and W503 conflict with Black's formatting; E501 is left to Black.
+extend-ignore = E203,W503,E501
+max-complexity = 15
+exclude = .git,__pycache__,.venv,venv,env,build,dist,node_modules,migrations,.watchdog
+per-file-ignores = __init__.py:F401

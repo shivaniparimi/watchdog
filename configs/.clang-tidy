@@ -1,0 +1,14 @@
+# Default clang-tidy checks, used when the repository has none of its own.
+# A focused set: likely bugs, security problems and clear performance issues, not style.
+Checks: >
+  -*,
+  bugprone-*,
+  -bugprone-easily-swappable-parameters,
+  cert-*,
+  clang-analyzer-*,
+  performance-*,
+  modernize-use-nullptr,
+  modernize-use-override,
+  readability-misleading-indentation
+WarningsAsErrors: ''
+HeaderFilterRegex: '.*'

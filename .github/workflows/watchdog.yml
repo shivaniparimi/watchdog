@@ -1,0 +1,428 @@
+# Watchdog: lint, format, security and AI review for pull requests.
+#
+# Other repositories call this as a reusable workflow; see the README for the few lines needed.
+name: Watchdog
+
+on:
+  workflow_call:
+    inputs:
+      watchdog-repo:
+        description: Repository Watchdog's scripts and action are loaded from.
+        type: string
+        default: shivaniparimi/watchdog
+      watchdog-ref:
+        description: Branch, tag or commit of Watchdog to use.
+        type: string
+        default: main
+      auto-fix:
+        description: Commit formatter and safe lint fixes back to the PR branch (same-repo PRs only).
+        type: boolean
+        default: true
+      fail-on-lint:
+        description: Fail the lint job when problems remain after auto-fix.
+        type: boolean
+        default: true
+      ai-review:
+        type: boolean
+        default: true
+      test-gap:
+        type: boolean
+        default: true
+      codeql:
+        type: boolean
+        default: true
+      dependency-review:
+        type: boolean
+        default: true
+      model:
+        type: string
+        default: claude-opus-5-5
+      min-severity:
+        description: Lowest AI finding severity posted inline (critical, major, minor, nit, none).
+        type: string
+        default: minor
+      max-comments:
+        type: number
+        default: 15
+      fail-on-severity:
+        description: Fail the AI review job on findings at this severity or worse (critical, major, minor, nit, none).
+        type: string
+        default: none
+      test-gap-fail-on:
+        description: Fail the test-gap job on gaps at this risk or higher (low, medium, high, none).
+        type: string
+        default: none
+      ignore-paths:
+        description: Globs the AI review and test-gap finder skip, one per line or comma-separated.
+        type: string
+        default: ""
+    secrets:
+      ANTHROPIC_API_KEY:
+        required: false
+      WATCHDOG_PUSH_TOKEN:
+        description: Optional token for pushing auto-fixes. Unlike the default token, its pushes trigger new workflow runs.
+        required: false
+
+env:
+  BASE_SHA: ${{ github.event.pull_request.base.sha }}
+  HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+
+jobs:
+  detect:
+    name: Detect languages
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      has-any: ${{ steps.detect.outputs.has-any }}
+      has-js: ${{ steps.detect.outputs.has-js }}
+      has-python: ${{ steps.detect.outputs.has-python }}
+      has-java: ${{ steps.detect.outputs.has-java }}
+      has-cpp: ${{ steps.detect.outputs.has-cpp }}
+      has-sql: ${{ steps.detect.outputs.has-sql }}
+      codeql-languages: ${{ steps.detect.outputs.codeql-languages }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.HEAD_SHA }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ inputs.watchdog-repo }}
+          ref: ${{ inputs.watchdog-ref }}
+          path: .watchdog
+          persist-credentials: false
+      - id: detect
+        run: .watchdog/scripts/detect.sh "$BASE_SHA" "$HEAD_SHA" "$RUNNER_TEMP/watchdog-files"
+
+  lint:
+    name: Lint and format
+    needs: detect
+    if: needs.detect.outputs.has-any == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      SAME_REPO: ${{ github.event.pull_request.head.repo.full_name == github.repository }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.HEAD_SHA }}
+          fetch-depth: 0
+          token: ${{ secrets.WATCHDOG_PUSH_TOKEN || github.token }}
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ inputs.watchdog-repo }}
+          ref: ${{ inputs.watchdog-ref }}
+          path: .watchdog
+          persist-credentials: false
+
+      - name: Prepare
+        run: |
+          {
+            echo "WATCHDOG_DIR=$GITHUB_WORKSPACE/.watchdog"
+            echo "FILES_DIR=$RUNNER_TEMP/watchdog-files"
+            echo "RESULTS_DIR=$RUNNER_TEMP/watchdog-lint"
+            echo "TOOLS_DIR=$RUNNER_TEMP/watchdog-tools"
+          } >> "$GITHUB_ENV"
+          echo ".watchdog/" >> .git/info/exclude
+          .watchdog/scripts/detect.sh "$BASE_SHA" "$HEAD_SHA" "$RUNNER_TEMP/watchdog-files"
+
+      # JavaScript / TypeScript
+      - if: needs.detect.outputs.has-js == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install Watchdog's default JS linters
+        if: needs.detect.outputs.has-js == 'true'
+        run: npm ci --prefix .watchdog --ignore-scripts --no-audit --no-fund
+      - name: Install the repository's JS dependencies
+        if: needs.detect.outputs.has-js == 'true' && hashFiles('package-lock.json') != ''
+        run: npm ci --ignore-scripts --no-audit --no-fund
+        continue-on-error: true
+
+      # Python and SQL
+      - if: needs.detect.outputs.has-python == 'true' || needs.detect.outputs.has-sql == 'true'
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install Python linters
+        if: needs.detect.outputs.has-python == 'true'
+        run: pip install --quiet black isort flake8 mypy
+      - name: Install SQLFluff
+        if: needs.detect.outputs.has-sql == 'true'
+        run: pip install --quiet "sqlfluff>=3"
+
+      # Java
+      - if: needs.detect.outputs.has-java == 'true'
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+      - name: Download Java tools
+        if: needs.detect.outputs.has-java == 'true'
+        run: |
+          mkdir -p "$TOOLS_DIR"
+          curl -fsSL -o "$TOOLS_DIR/google-java-format.jar" \
+            https://github.com/google/google-java-format/releases/download/v1.28.0/google-java-format-1.28.0-all-deps.jar
+          curl -fsSL -o "$TOOLS_DIR/checkstyle.jar" \
+            https://github.com/checkstyle/checkstyle/releases/download/checkstyle-10.26.1/checkstyle-10.26.1-all.jar
+
+      # C / C++
+      - name: Install clang tools
+        if: needs.detect.outputs.has-cpp == 'true'
+        run: |
+          if ! command -v clang-format > /dev/null || ! command -v clang-tidy > /dev/null; then
+            sudo apt-get update -qq && sudo apt-get install -y -qq clang-format clang-tidy
+          fi
+
+      - name: Auto-fix
+        if: inputs.auto-fix && env.SAME_REPO == 'true'
+        env:
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+        run: |
+          for lang in js python java cpp sql; do .watchdog/scripts/lint.sh fix "$lang" || true; done
+          git add --pathspec-from-file="$FILES_DIR/all.txt"
+          if git diff --cached --quiet; then
+            echo "Nothing to auto-fix."
+            exit 0
+          fi
+          git diff --cached --stat
+          git -c user.name="github-actions[bot]" \
+              -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+              commit -q -m "style: auto-fix lint and formatting (Watchdog)"
+          if git push origin "HEAD:refs/heads/$HEAD_REF"; then
+            echo "::notice::Watchdog pushed formatting and lint fixes to $HEAD_REF."
+          else
+            echo "::warning::Couldn't push auto-fixes (the branch may have moved). Run the formatters locally."
+          fi
+
+      - name: Check
+        id: check
+        run: |
+          echo "::add-matcher::.watchdog/configs/problem-matcher.json"
+          status=0
+          for lang in js python java cpp sql; do .watchdog/scripts/lint.sh check "$lang" || status=1; done
+          echo "::remove-matcher owner=watchdog-lint::"
+          echo "::remove-matcher owner=watchdog-tsc::"
+          echo "failed=$status" >> "$GITHUB_OUTPUT"
+
+      - name: Report
+        if: always()
+        run: |
+          {
+            echo "## Lint and format"
+            if [ -s "$RESULTS_DIR/summary.tsv" ]; then
+              echo "| Language | Tool | Result | Note |"
+              echo "|---|---|---|---|"
+              while IFS=$'\t' read -r lang tool status note; do
+                case "$status" in pass) icon="✅";; fail) icon="❌";; warn) icon="⚠️";; *) icon="➖";; esac
+                echo "| $lang | $tool | $icon $status | $note |"
+              done < "$RESULTS_DIR/summary.tsv"
+            else
+              echo "No lintable files changed."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: watchdog-lint
+          path: ${{ runner.temp }}/watchdog-lint
+          if-no-files-found: ignore
+          retention-days: 7
+
+      - name: Fail on remaining problems
+        if: inputs.fail-on-lint && steps.check.outputs.failed == '1'
+        run: |
+          echo "::error::Lint or formatting problems remain. See the annotations and the job summary."
+          exit 1
+
+  security:
+    name: Security scan
+    needs: detect
+    if: needs.detect.outputs.has-any == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+      actions: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.HEAD_SHA }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ inputs.watchdog-repo }}
+          ref: ${{ inputs.watchdog-ref }}
+          path: .watchdog
+          persist-credentials: false
+      - name: Prepare
+        run: |
+          echo "FILES_DIR=$RUNNER_TEMP/watchdog-files" >> "$GITHUB_ENV"
+          echo "RESULTS_DIR=$RUNNER_TEMP/watchdog-security" >> "$GITHUB_ENV"
+          .watchdog/scripts/detect.sh "$BASE_SHA" "$HEAD_SHA" "$RUNNER_TEMP/watchdog-files"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install scanners
+        run: pip install --quiet bandit pip-audit
+
+      - name: Dependency and code scans
+        id: scan
+        run: |
+          echo "::add-matcher::.watchdog/configs/problem-matcher.json"
+          if .watchdog/scripts/security.sh; then echo "failed=0" >> "$GITHUB_OUTPUT"; else echo "failed=1" >> "$GITHUB_OUTPUT"; fi
+          echo "::remove-matcher owner=watchdog-lint::"
+      - name: Report
+        if: always()
+        run: |
+          {
+            echo "## Security"
+            if [ -s "$RESULTS_DIR/summary.tsv" ]; then
+              echo "| Check | Result | Note |"
+              echo "|---|---|---|"
+              while IFS=$'\t' read -r check status note; do
+                case "$status" in pass) icon="✅";; fail) icon="❌";; warn) icon="⚠️";; *) icon="➖";; esac
+                echo "| $check | $icon $status | $note |"
+              done < "$RESULTS_DIR/summary.tsv"
+            else
+              echo "No dependency manifests or Python changes to scan."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # CodeQL can't upload results from fork PRs (no write token), so it's advisory there.
+      - name: Initialize CodeQL
+        if: inputs.codeql && needs.detect.outputs.codeql-languages != ''
+        uses: github/codeql-action/init@v3
+        continue-on-error: ${{ github.event.pull_request.head.repo.full_name != github.repository }}
+        with:
+          languages: ${{ needs.detect.outputs.codeql-languages }}
+          build-mode: none
+      - name: Run CodeQL
+        if: inputs.codeql && needs.detect.outputs.codeql-languages != ''
+        uses: github/codeql-action/analyze@v3
+        continue-on-error: ${{ github.event.pull_request.head.repo.full_name != github.repository }}
+        with:
+          category: watchdog
+
+      - name: Fail on security problems
+        if: steps.scan.outputs.failed == '1'
+        run: |
+          echo "::error::Security scan found problems. See the job summary."
+          exit 1
+
+  dependency-review:
+    name: Dependency review
+    if: inputs.dependency-review && github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/dependency-review-action@v4
+        with:
+          fail-on-severity: high
+          comment-summary-in-pr: on-failure
+
+  ai-review:
+    name: AI code review
+    needs: [detect, lint]
+    if: always() && inputs.ai-review && needs.detect.outputs.has-any == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.HEAD_SHA }}
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ inputs.watchdog-repo }}
+          ref: ${{ inputs.watchdog-ref }}
+          path: .watchdog
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          name: watchdog-lint
+          path: ${{ runner.temp }}/watchdog-lint
+      - uses: ./.watchdog
+        with:
+          task: review
+          anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
+          model: ${{ inputs.model }}
+          min-severity: ${{ inputs.min-severity }}
+          max-comments: ${{ inputs.max-comments }}
+          fail-on-severity: ${{ inputs.fail-on-severity }}
+          ignore-paths: ${{ inputs.ignore-paths }}
+          lint-results: ${{ runner.temp }}/watchdog-lint
+
+  test-gap:
+    name: Test gaps
+    needs: detect
+    if: inputs.test-gap && needs.detect.outputs.has-any == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.HEAD_SHA }}
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ inputs.watchdog-repo }}
+          ref: ${{ inputs.watchdog-ref }}
+          path: .watchdog
+          persist-credentials: false
+      - uses: ./.watchdog
+        with:
+          task: test-gap
+          anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
+          model: ${{ inputs.model }}
+          fail-on: ${{ inputs.test-gap-fail-on }}
+          ignore-paths: ${{ inputs.ignore-paths }}
+
+  summary:
+    name: Summary
+    needs: [detect, lint, security, dependency-review, ai-review, test-gap]
+    if: always()
+    runs-on: ubuntu-latest
+    permissions: {}
+    steps:
+      - name: Write summary
+        env:
+          LINT: ${{ needs.lint.result }}
+          SECURITY: ${{ needs.security.result }}
+          DEPS: ${{ needs.dependency-review.result }}
+          REVIEW: ${{ needs.ai-review.result }}
+          TESTGAP: ${{ needs.test-gap.result }}
+        run: |
+          label() {
+            case "$1" in
+              success) echo "✅ Passed" ;; failure) echo "❌ Failed" ;; cancelled) echo "⏹️ Cancelled" ;; *) echo "➖ Skipped" ;;
+            esac
+          }
+          {
+            echo "## 🐕 Watchdog summary"
+            echo "| Check | Result |"
+            echo "|---|---|"
+            echo "| Lint and format | $(label "$LINT") |"
+            echo "| Security scan | $(label "$SECURITY") |"
+            echo "| Dependency review | $(label "$DEPS") |"
+            echo "| AI code review | $(label "$REVIEW") |"
+            echo "| Test gaps | $(label "$TESTGAP") |"
+          } >> "$GITHUB_STEP_SUMMARY"
+          for r in "$LINT" "$SECURITY" "$DEPS" "$REVIEW" "$TESTGAP"; do
+            if [ "$r" = failure ]; then
+              echo "::error::Some Watchdog checks failed."
+              exit 1
+            fi
+          done

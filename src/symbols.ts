@@ -1,8 +1,24 @@
 import type { ChangedSymbol, FunctionDef, Language, ParsedPatch } from "./types.js";
 
 const CONTROL_KEYWORDS = new Set([
-  "if", "for", "while", "switch", "catch", "return", "function", "new", "else",
-  "throw", "do", "try", "await", "typeof", "super", "this", "with", "yield",
+  "if",
+  "for",
+  "while",
+  "switch",
+  "catch",
+  "return",
+  "function",
+  "new",
+  "else",
+  "throw",
+  "do",
+  "try",
+  "await",
+  "typeof",
+  "super",
+  "this",
+  "with",
+  "yield",
 ]);
 
 const JS_PATTERNS = [
@@ -160,12 +176,7 @@ export function isTrivialLine(text: string, lang: Language): boolean {
 }
 
 /** Group a file's non-trivial changed lines by the function they fall in. */
-export function changedSymbols(
-  path: string,
-  lang: Language,
-  content: string,
-  patch: ParsedPatch,
-): ChangedSymbol[] {
+export function changedSymbols(path: string, lang: Language, content: string, patch: ParsedPatch): ChangedSymbol[] {
   const defs = findFunctions(content, lang);
   const lines = content.split("\n");
   const byDef = new Map<FunctionDef, Set<number>>();

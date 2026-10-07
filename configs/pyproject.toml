@@ -1,0 +1,7 @@
+# Default Black and isort settings, used when the repository has none of its own.
+[tool.black]
+line-length = 100
+
+[tool.isort]
+profile = "black"
+line_length = 100

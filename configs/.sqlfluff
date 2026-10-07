@@ -1,0 +1,14 @@
+# Default SQLFluff config, used when the repository has none of its own.
+[sqlfluff]
+dialect = postgres
+templater = raw
+max_line_length = 120
+# Layout/whitespace and capitalisation are fixed automatically; these structural rules are too noisy by default.
+exclude_rules = AM04, ST06
+
+[sqlfluff:indentation]
+indent_unit = space
+tab_space_size = 2
+
+[sqlfluff:rules:capitalisation.keywords]
+capitalisation_policy = upper

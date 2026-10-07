@@ -24,7 +24,10 @@ describe("candidateTests", () => {
       "test/unrelated.test.ts": "import { x } from '../src/other';",
       "tests/test_total.py": "",
     });
-    expect(candidateTests("src/cart/total.ts", repo).sort()).toEqual(["src/cart/total.test.ts", "test/checkout.spec.js"]);
+    expect(candidateTests("src/cart/total.ts", repo).sort()).toEqual([
+      "src/cart/total.test.ts",
+      "test/checkout.spec.js",
+    ]);
   });
 
   it("matches Python tests that import the module", () => {
@@ -37,7 +40,11 @@ describe("candidateTests", () => {
   });
 
   it("treats Go tests in the same package directory as candidates", () => {
-    const repo = memoryRepo({ "pkg/cart/total.go": "", "pkg/cart/helpers_test.go": "", "pkg/other/x_test.go": "" });
+    const repo = memoryRepo({
+      "pkg/cart/total.go": "",
+      "pkg/cart/helpers_test.go": "",
+      "pkg/other/x_test.go": "",
+    });
     expect(candidateTests("pkg/cart/total.go", repo)).toEqual(["pkg/cart/helpers_test.go"]);
   });
 });

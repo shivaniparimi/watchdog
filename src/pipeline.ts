@@ -43,7 +43,12 @@ export function ruleVerdict(sym: AnalyzedSymbol): Verdict {
   }
 }
 
-export const RISK_RANK: Record<Risk, number> = { high: 3, medium: 2, low: 1, none: 0 };
+export const RISK_RANK: Record<Risk, number> = {
+  high: 3,
+  medium: 2,
+  low: 1,
+  none: 0,
+};
 
 export function isGap(f: Finding): boolean {
   return !f.verdict.covered && f.verdict.risk !== "none";
@@ -72,7 +77,10 @@ export async function findTestGaps(
 
   const findings = symbols
     .map((s) => ({ ...s, verdict: aiVerdicts.get(s.id) ?? ruleVerdict(s) }))
-    .sort((a, b) => RISK_RANK[b.verdict.risk] - RISK_RANK[a.verdict.risk] || a.path.localeCompare(b.path) || a.start - b.start);
+    .sort(
+      (a, b) =>
+        RISK_RANK[b.verdict.risk] - RISK_RANK[a.verdict.risk] || a.path.localeCompare(b.path) || a.start - b.start,
+    );
 
   return { ...rest, findings, aiNote };
 }

@@ -1,7 +1,7 @@
 {
   "name": "watchdog",
   "version": "1.0.0",
-  "description": "GitHub Action that flags changed functions with no matching test change",
+  "description": "Automated PR checks: multi-language lint and format with auto-fix, security scans, Claude code review, and test-gap detection",
   "main": "dist/index.cjs",
   "directories": {
     "test": "test"
@@ -24,10 +24,15 @@
     "zod": "^4.6.5"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
     "@types/node": "^26.6.4",
     "esbuild": "^0.28.2",
+    "eslint": "^10.12.0",
+    "globals": "^17.13.0",
+    "prettier": "^3.9.9",
     "tsx": "^4.23.15",
-    "typescript": "^7.0.2",
+    "typescript": "~6.0",
+    "typescript-eslint": "^8.71.1",
     "vitest": "^5.0.3"
   }
 }

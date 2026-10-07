@@ -1,0 +1,3 @@
+# Default clang-format style, used when the repository has none of its own.
+BasedOnStyle: Google
+ColumnLimit: 100

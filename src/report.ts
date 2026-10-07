@@ -6,6 +6,8 @@ export const SUMMARY_MARKER = "<!-- test-gap-summary -->";
 export interface InlineComment {
   path: string;
   line: number;
+  /** First line of a multi-line comment (needed for multi-line suggestions). */
+  startLine?: number;
   body: string;
   /** Stable key used to avoid posting the same comment twice when the PR is updated. */
   key: string;
@@ -15,7 +17,12 @@ export function commentKey(f: Pick<Finding, "path" | "name">): string {
   return `<!-- test-gap:${f.path}#${f.name} -->`;
 }
 
-const RISK_LABEL = { high: "🔴 High", medium: "🟠 Medium", low: "🟡 Low", none: "—" } as const;
+const RISK_LABEL = {
+  high: "🔴 High",
+  medium: "🟠 Medium",
+  low: "🟡 Low",
+  none: "—",
+} as const;
 
 /** Pick a line GitHub will accept a comment on: the function's first line, else its first changed line. */
 function anchorLine(f: Finding, patch: ParsedPatch | undefined): number | null {

@@ -75,13 +75,24 @@ export async function judge(symbols: AnalyzedSymbol[], options: JudgeOptions = {
       max_tokens: 16000,
       betas: ["server-side-fallback-2026-07-01"],
       fallbacks: "default",
-      output_config: { effort: "medium", format: betaZodOutputFormat(VerdictsSchema) },
-      system: [{ type: "text", text: SYSTEM_PROMPT, cache_control: { type: "ephemeral" } }],
+      output_config: {
+        effort: "medium",
+        format: betaZodOutputFormat(VerdictsSchema),
+      },
+      system: [
+        {
+          type: "text",
+          text: SYSTEM_PROMPT,
+          cache_control: { type: "ephemeral" },
+        },
+      ],
       messages: [{ role: "user", content: batch.map(renderItem).join("\n\n") }],
     });
 
     if (response.stop_reason === "refusal" || !response.parsed_output) {
-      console.warn(`Claude returned no verdicts for ${batch.length} function(s) (stop_reason: ${response.stop_reason}).`);
+      console.warn(
+        `Claude returned no verdicts for ${batch.length} function(s) (stop_reason: ${response.stop_reason}).`,
+      );
       continue;
     }
 

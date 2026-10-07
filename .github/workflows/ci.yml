@@ -1,0 +1,53 @@
+# Watchdog's own CI: unit tests on every push and PR, plus Watchdog itself on PRs,
+# loaded from the PR's own commit so changes to Watchdog are tested before they merge.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - run: npm run typecheck
+      - run: npm test
+      - name: Check dist/ is up to date
+        run: |
+          npm run build
+          if ! git diff --quiet -- dist/; then
+            echo "::error::dist/ is out of date. Run 'npm run build' and commit the result."
+            exit 1
+          fi
+      - name: Check shell scripts
+        run: bash -n scripts/*.sh
+
+  watchdog:
+    name: Watchdog
+    if: github.event_name == 'pull_request'
+    permissions:
+      contents: write
+      pull-requests: write
+      security-events: write
+      actions: read
+    uses: ./.github/workflows/watchdog.yml
+    with:
+      watchdog-repo: ${{ github.repository }}
+      watchdog-ref: ${{ github.event.pull_request.head.sha }}
+    secrets: inherit

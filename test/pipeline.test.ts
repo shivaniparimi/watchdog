@@ -32,12 +32,21 @@ it("labels", () => {
 `;
 
 function setup(changedTest: boolean) {
-  const repo = memoryRepo({ "src/pricing.ts": pricing, "src/pricing.test.ts": pricingTest, "README.md": "" });
+  const repo = memoryRepo({
+    "src/pricing.ts": pricing,
+    "src/pricing.test.ts": pricingTest,
+    "README.md": "",
+  });
   const files: ChangedFile[] = [
     { path: "src/pricing.ts", status: "added", patch: addedFilePatch(pricing) },
     { path: "README.md", status: "modified", patch: "@@ -1 +1 @@\n-a\n+b" },
   ];
-  if (changedTest) files.push({ path: "src/pricing.test.ts", status: "modified", patch: "@@ -8 +8 @@\n-x\n+y" });
+  if (changedTest)
+    files.push({
+      path: "src/pricing.test.ts",
+      status: "modified",
+      patch: "@@ -8 +8 @@\n-x\n+y",
+    });
   return { repo, files };
 }
 
@@ -108,7 +117,19 @@ describe("summaryMarkdown", () => {
   });
 
   it("says so when nothing relevant changed", async () => {
-    const md = summaryMarkdown(await findTestGaps([{ path: "README.md", status: "modified", patch: "@@ -1 +1 @@\n-a\n+b" }], memoryRepo({}), config));
+    const md = summaryMarkdown(
+      await findTestGaps(
+        [
+          {
+            path: "README.md",
+            status: "modified",
+            patch: "@@ -1 +1 @@\n-a\n+b",
+          },
+        ],
+        memoryRepo({}),
+        config,
+      ),
+    );
     expect(md).toContain("No source files with logic changes");
   });
 });
