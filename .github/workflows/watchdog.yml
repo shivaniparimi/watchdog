@@ -82,12 +82,12 @@ jobs:
       has-sql: ${{ steps.detect.outputs.has-sql }}
       codeql-languages: ${{ steps.detect.outputs.codeql-languages }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ env.HEAD_SHA }}
           fetch-depth: 0
           persist-credentials: false
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           repository: ${{ inputs.watchdog-repo }}
           ref: ${{ inputs.watchdog-ref }}
@@ -106,12 +106,12 @@ jobs:
     env:
       SAME_REPO: ${{ github.event.pull_request.head.repo.full_name == github.repository }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ env.HEAD_SHA }}
           fetch-depth: 0
           token: ${{ secrets.WATCHDOG_PUSH_TOKEN || github.token }}
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           repository: ${{ inputs.watchdog-repo }}
           ref: ${{ inputs.watchdog-ref }}
@@ -131,7 +131,7 @@ jobs:
 
       # JavaScript / TypeScript
       - if: needs.detect.outputs.has-js == 'true'
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: 22
       - name: Install Watchdog's default JS linters
@@ -144,7 +144,7 @@ jobs:
 
       # Python and SQL
       - if: needs.detect.outputs.has-python == 'true' || needs.detect.outputs.has-sql == 'true'
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version: "3.12"
       - name: Install Python linters
@@ -156,7 +156,7 @@ jobs:
 
       # Java
       - if: needs.detect.outputs.has-java == 'true'
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: "21"
@@ -225,7 +225,7 @@ jobs:
             fi
           } >> "$GITHUB_STEP_SUMMARY"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: watchdog-lint
@@ -249,12 +249,12 @@ jobs:
       security-events: write
       actions: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ env.HEAD_SHA }}
           fetch-depth: 0
           persist-credentials: false
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           repository: ${{ inputs.watchdog-repo }}
           ref: ${{ inputs.watchdog-ref }}
@@ -265,7 +265,7 @@ jobs:
           echo "FILES_DIR=$RUNNER_TEMP/watchdog-files" >> "$GITHUB_ENV"
           echo "RESULTS_DIR=$RUNNER_TEMP/watchdog-security" >> "$GITHUB_ENV"
           .watchdog/scripts/detect.sh "$BASE_SHA" "$HEAD_SHA" "$RUNNER_TEMP/watchdog-files"
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
       - name: Install scanners
@@ -297,14 +297,14 @@ jobs:
       # CodeQL can't upload results from fork PRs (no write token), so it's advisory there.
       - name: Initialize CodeQL
         if: inputs.codeql && needs.detect.outputs.codeql-languages != ''
-        uses: github/codeql-action/init@v3
+        uses: github/codeql-action/init@v4
         continue-on-error: ${{ github.event.pull_request.head.repo.full_name != github.repository }}
         with:
           languages: ${{ needs.detect.outputs.codeql-languages }}
           build-mode: none
       - name: Run CodeQL
         if: inputs.codeql && needs.detect.outputs.codeql-languages != ''
-        uses: github/codeql-action/analyze@v3
+        uses: github/codeql-action/analyze@v4
         continue-on-error: ${{ github.event.pull_request.head.repo.full_name != github.repository }}
         with:
           category: watchdog
@@ -323,7 +323,7 @@ jobs:
       contents: read
       pull-requests: write
     steps:
-      - uses: actions/dependency-review-action@v4
+      - uses: actions/dependency-review-action@v5
         with:
           fail-on-severity: high
           comment-summary-in-pr: on-failure
@@ -337,17 +337,17 @@ jobs:
       contents: read
       pull-requests: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ env.HEAD_SHA }}
           persist-credentials: false
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           repository: ${{ inputs.watchdog-repo }}
           ref: ${{ inputs.watchdog-ref }}
           path: .watchdog
           persist-credentials: false
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         continue-on-error: true
         with:
           name: watchdog-lint
@@ -372,11 +372,11 @@ jobs:
       contents: read
       pull-requests: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ env.HEAD_SHA }}
           persist-credentials: false
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           repository: ${{ inputs.watchdog-repo }}
           ref: ${{ inputs.watchdog-ref }}
