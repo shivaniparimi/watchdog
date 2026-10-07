@@ -1,0 +1,33 @@
+{
+  "name": "test-gap",
+  "version": "1.0.0",
+  "description": "GitHub Action that flags changed functions with no matching test change",
+  "main": "dist/index.cjs",
+  "directories": {
+    "test": "test"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "build": "esbuild src/index.ts --bundle --platform=node --target=node20 --format=cjs --outfile=dist/index.cjs --log-level=warning",
+    "typecheck": "tsc",
+    "local": "tsx src/local.ts"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "module",
+  "dependencies": {
+    "@actions/core": "^3.0.1",
+    "@actions/github": "^9.1.1",
+    "@anthropic-ai/sdk": "^0.132.0",
+    "minimatch": "^10.2.6",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.4",
+    "esbuild": "^0.28.2",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2",
+    "vitest": "^5.0.3"
+  }
+}

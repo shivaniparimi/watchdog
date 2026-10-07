@@ -1,0 +1,30 @@
+name: Test Gap Finder
+description: Flags functions changed in a pull request that no test covers.
+branding:
+  icon: check-square
+  color: green
+inputs:
+  github-token:
+    description: Token used to read the PR and post comments.
+    default: ${{ github.token }}
+  anthropic-api-key:
+    description: Anthropic API key. Without it, only the rule checks run.
+    required: false
+  model:
+    description: Claude model used to judge coverage.
+    default: claude-opus-5-5
+  fail-on:
+    description: Fail the check when a gap at this risk or higher is found (none, low, medium, high).
+    default: none
+  max-functions:
+    description: Maximum number of changed functions to check per PR.
+    default: "40"
+  ignore-paths:
+    description: Extra glob patterns to skip, one per line or comma-separated.
+    default: ""
+outputs:
+  gaps:
+    description: Number of changed functions that look untested.
+runs:
+  using: node24
+  main: dist/index.cjs
