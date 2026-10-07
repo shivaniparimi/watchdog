@@ -50,8 +50,8 @@ inputs:
     description: "[review] Prove suspected bugs by writing and running a test for each. Needs the project's dependencies installed."
     default: "true"
   max-proofs:
-    description: "[review] Maximum findings to prove per run."
-    default: "5"
+    description: "[review] Maximum findings to prove per run. Default depends on the provider (2 for Gemini's free tier, 5 for Claude)."
+    default: ""
   test-timeout:
     description: Seconds allowed for one test run (proofs and mutation checks).
     default: "120"

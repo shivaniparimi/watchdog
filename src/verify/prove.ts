@@ -2,7 +2,7 @@ import { existsSync, readFileSync, realpathSync, rmSync, writeFileSync } from "n
 import { basename, dirname, extname, join, relative } from "node:path";
 import { z } from "zod";
 import { repoToolList, safePath } from "../agent/repoTools.js";
-import type { AiProvider } from "../ai/index.js";
+import { AiQuotaError, type AiProvider } from "../ai/index.js";
 import type { Finding } from "../review/report.js";
 import type { ReviewFile } from "../review/collect.js";
 import { candidateTests, type RepoReader } from "../testMap.js";
@@ -114,14 +114,21 @@ export async function proveFindings(findings: Finding[], options: ProveOptions):
 
     // Two attempts: if the first test can't even run, the model sees the error and fixes it.
     for (let attempt = 0; attempt < 2; attempt++) {
-      const { output } = await options.provider.runAgent({
-        system: SYSTEM,
-        user,
-        tools: repoToolList(options.root, diffs),
-        submit: { name: "submit_test", description: "Submit the test file. Call exactly once.", schema: SubmitTest },
-        maxIterations: Math.min(10, options.provider.maxIterations),
-        effort: "medium",
-      });
+      let output: z.infer<typeof SubmitTest> | null;
+      try {
+        ({ output } = await options.provider.runAgent({
+          system: SYSTEM,
+          user,
+          tools: repoToolList(options.root, diffs),
+          submit: { name: "submit_test", description: "Submit the test file. Call exactly once.", schema: SubmitTest },
+          maxIterations: Math.min(10, options.provider.maxIterations),
+          effort: "medium",
+        }));
+      } catch (err) {
+        // Out of quota: keep the proofs so far and stop trying.
+        if (err instanceof AiQuotaError) return proofs;
+        throw err;
+      }
       if (!output || !output.code.trim()) {
         proof = { status: "inconclusive", fixVerified: null, note: output?.why_it_fails || "no test was written" };
         break;

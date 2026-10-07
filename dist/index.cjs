@@ -65096,6 +65096,14 @@ function betaZodTool(options) {
 function nudge(submitName) {
   return `Call ${submitName} now with your answer. Use an empty list if you found nothing.`;
 }
+var AiQuotaError = class extends Error {
+  constructor(message, retryAfterMs) {
+    super(message);
+    this.retryAfterMs = retryAfterMs;
+    this.name = "AiQuotaError";
+  }
+  retryAfterMs;
+};
 
 // src/ai/anthropic.ts
 var ANTHROPIC_DEFAULT_MODEL = "claude-opus-5-5";
@@ -65109,6 +65117,7 @@ var AnthropicProvider = class {
   name = "anthropic";
   reviewChars = 4e5;
   maxIterations = 30;
+  maxProofs = 5;
   /**
    * Let Claude explore with tools, then collect its answer from a submit tool. Forced tool use isn't
    * available on current models, so the prompt asks for the submit call and, if Claude stops
@@ -65211,34 +65220,51 @@ function toFunctionSchema(schema) {
 function sleep2(ms) {
   return new Promise((resolve3) => setTimeout(resolve3, ms));
 }
+var MAX_WAIT_MS = 6e4;
+function parseRetryDelayMs(body, retryAfterHeader) {
+  const detail = /"retryDelay"\s*:\s*"([\d.]+)s"/.exec(body);
+  if (detail) return Number(detail[1]) * 1e3;
+  const text = /retry in (?:(\d+)h)?\s*(?:(\d+)m)?\s*(?:([\d.]+)s)?/i.exec(body);
+  if (text && (text[1] || text[2] || text[3])) {
+    return ((Number(text[1] ?? 0) * 60 + Number(text[2] ?? 0)) * 60 + Number(text[3] ?? 0)) * 1e3;
+  }
+  const header = Number(retryAfterHeader);
+  return Number.isFinite(header) && header > 0 ? header * 1e3 : null;
+}
+function describeWait(ms) {
+  const min = Math.round(ms / 6e4);
+  return min >= 60 ? `about ${Math.round(min / 60)} hour(s)` : min >= 1 ? `about ${min} minute(s)` : `${Math.ceil(ms / 1e3)}s`;
+}
 var OpenAICompatProvider = class {
   constructor(options) {
     this.options = options;
-    this.model = options.model;
+    this.models = [options.model, ...(options.fallbackModels ?? []).filter((m) => m !== options.model)];
     this.fetchImpl = options.fetch ?? fetch;
   }
   options;
   name = "gemini";
-  reviewChars = 15e4;
-  maxIterations = 12;
-  model;
+  reviewChars = 12e4;
+  maxIterations = 8;
+  maxProofs = 2;
+  models;
+  modelIndex = 0;
   fetchImpl;
+  /** The model currently in use (it changes when a quota runs out). */
+  get model() {
+    return this.models[this.modelIndex];
+  }
   async complete(messages, tools) {
-    const body = JSON.stringify({
-      model: this.model,
-      messages,
-      tools: tools.map((t) => ({
-        type: "function",
-        function: { name: t.name, description: t.description, parameters: toFunctionSchema(t.inputSchema) }
-      })),
-      tool_choice: "auto"
-    });
+    const toolDefs = tools.map((t) => ({
+      type: "function",
+      function: { name: t.name, description: t.description, parameters: toFunctionSchema(t.inputSchema) }
+    }));
     const base = this.options.retryDelayMs ?? 2e3;
+    let lastWait = 0;
     for (let attempt = 0; ; attempt++) {
       const res = await this.fetchImpl(`${this.options.baseUrl.replace(/\/$/, "")}/chat/completions`, {
         method: "POST",
         headers: { "content-type": "application/json", authorization: `Bearer ${this.options.apiKey}` },
-        body
+        body: JSON.stringify({ model: this.model, messages, tools: toolDefs, tool_choice: "auto" })
       });
       if (res.ok) {
         const data = await res.json();
@@ -65246,13 +65272,33 @@ var OpenAICompatProvider = class {
         if (!message) throw new Error("The model returned no message.");
         return message;
       }
-      const retryable = res.status === 429 || res.status >= 500;
       const text = await res.text();
-      if (!retryable || attempt >= 5) throw new Error(`${this.name} API error ${res.status}: ${text.slice(0, 500)}`);
-      const retryAfter = Number(res.headers.get("retry-after"));
-      const wait = Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter * 1e3 : base * 2 ** attempt;
-      console.warn(`${this.name} API ${res.status}; retrying in ${Math.round(wait / 1e3)}s.`);
-      await sleep2(Math.min(wait, 9e4));
+      const quota = res.status === 429;
+      const unavailable = res.status === 404;
+      if (!quota && !unavailable && res.status < 500) {
+        throw new Error(`${this.name} API error ${res.status}: ${text.slice(0, 500)}`);
+      }
+      const wait = quota ? parseRetryDelayMs(text, res.headers.get("retry-after")) ?? base * 2 ** attempt : base * 2 ** attempt;
+      lastWait = wait;
+      if (!unavailable && wait <= MAX_WAIT_MS && attempt < 4) {
+        console.warn(`${this.name} API ${res.status} on ${this.model}; retrying in ${Math.ceil(wait / 1e3)}s.`);
+        await sleep2(wait);
+        continue;
+      }
+      if (this.modelIndex + 1 < this.models.length) {
+        const from = this.model;
+        this.modelIndex++;
+        console.warn(`${from} ${unavailable ? "isn't available" : "quota used up"}; switching to ${this.model}.`);
+        for (const m of messages) if (m.role === "assistant") delete m.extra_content;
+        attempt = -1;
+        continue;
+      }
+      if (quota)
+        throw new AiQuotaError(
+          `${this.name} free-tier quota is used up on every model tried (${this.models.join(", ")}). It resets in ${describeWait(lastWait)}.`,
+          lastWait
+        );
+      throw new Error(`${this.name} API error ${res.status}: ${text.slice(0, 500)}`);
     }
   }
   async runAgent(request2) {
@@ -65314,8 +65360,21 @@ var OpenAICompatProvider = class {
     return { output: output2, toolCalls };
   }
 };
+var GEMINI_FREE_MODELS = [
+  "gemini-3.8-flash",
+  "gemini-3.7-flash",
+  "gemini-3.6-flash",
+  "gemini-3.5-flash",
+  "gemini-2.5-flash"
+];
 function geminiProvider(apiKey, model = GEMINI_DEFAULT_MODEL, fetchImpl) {
-  return new OpenAICompatProvider({ baseUrl: GEMINI_BASE_URL, apiKey, model, fetch: fetchImpl });
+  return new OpenAICompatProvider({
+    baseUrl: GEMINI_BASE_URL,
+    apiKey,
+    model,
+    fallbackModels: GEMINI_FREE_MODELS,
+    fetch: fetchImpl
+  });
 }
 
 // src/ai/index.ts
@@ -68289,14 +68348,20 @@ async function proveFindings(findings, options) {
 ${brief}`;
     let proof = { status: "inconclusive", fixVerified: null, note: "no test was written" };
     for (let attempt = 0; attempt < 2; attempt++) {
-      const { output: output2 } = await options.provider.runAgent({
-        system: SYSTEM,
-        user,
-        tools: repoToolList(options.root, diffs),
-        submit: { name: "submit_test", description: "Submit the test file. Call exactly once.", schema: SubmitTest },
-        maxIterations: Math.min(10, options.provider.maxIterations),
-        effort: "medium"
-      });
+      let output2;
+      try {
+        ({ output: output2 } = await options.provider.runAgent({
+          system: SYSTEM,
+          user,
+          tools: repoToolList(options.root, diffs),
+          submit: { name: "submit_test", description: "Submit the test file. Call exactly once.", schema: SubmitTest },
+          maxIterations: Math.min(10, options.provider.maxIterations),
+          effort: "medium"
+        }));
+      } catch (err) {
+        if (err instanceof AiQuotaError) return proofs;
+        throw err;
+      }
       if (!output2 || !output2.code.trim()) {
         proof = { status: "inconclusive", fixVerified: null, note: output2?.why_it_fails || "no test was written" };
         break;
@@ -68374,6 +68439,18 @@ function severityInput(name, fallback) {
   return value;
 }
 async function runReview(ctx) {
+  try {
+    await review(ctx);
+  } catch (err) {
+    if (!(err instanceof AiQuotaError)) throw err;
+    const note = `\u{1F415} Watchdog AI review skipped: ${err.message}`;
+    warning(note);
+    await upsertSummary(ctx.octokit, ctx.pr, REVIEW_SUMMARY_MARKER, `${REVIEW_SUMMARY_MARKER}
+${note}`);
+    await summary.addRaw(note).write();
+  }
+}
+async function review(ctx) {
   if (!ctx.ai) {
     const note = "\u{1F415} Watchdog AI review skipped: add a free `GEMINI_API_KEY` secret (or an `ANTHROPIC_API_KEY`) to enable it.";
     warning(note);
@@ -68425,7 +68502,7 @@ async function runReview(ctx) {
         repo: fsRepo(options.repoRoot),
         runners,
         files: reviewed,
-        maxProofs: Number(getInput("max-proofs") || 5),
+        maxProofs: Number(getInput("max-proofs")) || ai.maxProofs,
         testTimeoutMs: Number(getInput("test-timeout") || 120) * 1e3
       });
       for (const [i, proof] of proofs) findings[i].proof = proof;

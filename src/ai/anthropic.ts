@@ -10,6 +10,7 @@ export class AnthropicProvider implements AiProvider {
   readonly name = "anthropic" as const;
   readonly reviewChars = 400_000;
   readonly maxIterations = 30;
+  readonly maxProofs = 5;
 
   constructor(
     private readonly client: Anthropic,

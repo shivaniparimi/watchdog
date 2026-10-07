@@ -3,6 +3,7 @@ import { ANTHROPIC_DEFAULT_MODEL, AnthropicProvider } from "./anthropic.js";
 import { GEMINI_DEFAULT_MODEL, geminiProvider } from "./openaiCompat.js";
 import type { AiProvider } from "./types.js";
 
+export { AiQuotaError } from "./types.js";
 export type { AiProvider, AgentRequest, AgentResult, ToolDef } from "./types.js";
 
 export interface ProviderConfig {
