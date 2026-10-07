@@ -65253,18 +65253,24 @@ var OpenAICompatProvider = class {
   get model() {
     return this.models[this.modelIndex];
   }
-  async complete(messages, tools) {
+  /** Whether the API rejected `tool_choice: "required"`; then "auto" is used from that point on. */
+  requiredUnsupported = false;
+  async complete(messages, tools, requireTool = false) {
     const toolDefs = tools.map((t) => ({
       type: "function",
       function: { name: t.name, description: t.description, parameters: toFunctionSchema(t.inputSchema) }
     }));
     const base = this.options.retryDelayMs ?? 2e3;
-    let lastWait = 0;
     for (let attempt = 0; ; attempt++) {
       const res = await this.fetchImpl(`${this.options.baseUrl.replace(/\/$/, "")}/chat/completions`, {
         method: "POST",
         headers: { "content-type": "application/json", authorization: `Bearer ${this.options.apiKey}` },
-        body: JSON.stringify({ model: this.model, messages, tools: toolDefs, tool_choice: "auto" })
+        body: JSON.stringify({
+          model: this.model,
+          messages,
+          tools: toolDefs,
+          tool_choice: requireTool && !this.requiredUnsupported ? "required" : "auto"
+        })
       });
       if (res.ok) {
         const data = await res.json();
@@ -65275,11 +65281,15 @@ var OpenAICompatProvider = class {
       const text = await res.text();
       const quota = res.status === 429;
       const unavailable = res.status === 404;
+      if (res.status === 400 && requireTool && !this.requiredUnsupported && /tool_choice/i.test(text)) {
+        this.requiredUnsupported = true;
+        attempt = -1;
+        continue;
+      }
       if (!quota && !unavailable && res.status < 500) {
         throw new Error(`${this.name} API error ${res.status}: ${text.slice(0, 500)}`);
       }
       const wait = quota ? parseRetryDelayMs(text, res.headers.get("retry-after")) ?? base * 2 ** attempt : base * 2 ** attempt;
-      lastWait = wait;
       if (!unavailable && wait <= MAX_WAIT_MS && attempt < 4) {
         console.warn(`${this.name} API ${res.status} on ${this.model}; retrying in ${Math.ceil(wait / 1e3)}s.`);
         await sleep2(wait);
@@ -65295,8 +65305,8 @@ var OpenAICompatProvider = class {
       }
       if (quota)
         throw new AiQuotaError(
-          `${this.name} free-tier quota is used up on every model tried (${this.models.join(", ")}). It resets in ${describeWait(lastWait)}.`,
-          lastWait
+          `${this.name} free-tier quota is used up on every model tried (${this.models.join(", ")}). It resets in ${describeWait(wait)}.`,
+          wait
         );
       throw new Error(`${this.name} API error ${res.status}: ${text.slice(0, 500)}`);
     }
@@ -65319,8 +65329,8 @@ var OpenAICompatProvider = class {
     ];
     const limit2 = request2.maxIterations ?? this.maxIterations;
     for (let i = 0; i < limit2 + 1 && output2 === null; i++) {
-      const offered = i >= limit2 - 1 ? [submit] : tools;
-      const message = await this.complete(messages, offered);
+      const final = i >= limit2 - 1 || nudged;
+      const message = await this.complete(messages, final ? [submit] : tools, final);
       messages.push(message);
       const calls = message.tool_calls ?? [];
       if (calls.length === 0) {
