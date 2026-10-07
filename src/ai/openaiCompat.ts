@@ -118,19 +118,30 @@ export class OpenAICompatProvider implements AiProvider {
     return this.models[this.modelIndex]!;
   }
 
-  private async complete(messages: Message[], tools: ToolDef[]): Promise<Extract<Message, { role: "assistant" }>> {
+  /** Whether the API rejected `tool_choice: "required"`; then "auto" is used from that point on. */
+  private requiredUnsupported = false;
+
+  private async complete(
+    messages: Message[],
+    tools: ToolDef[],
+    requireTool = false,
+  ): Promise<Extract<Message, { role: "assistant" }>> {
     const toolDefs = tools.map((t) => ({
       type: "function",
       function: { name: t.name, description: t.description, parameters: toFunctionSchema(t.inputSchema) },
     }));
     const base = this.options.retryDelayMs ?? 2000;
-    let lastWait = 0;
 
     for (let attempt = 0; ; attempt++) {
       const res = await this.fetchImpl(`${this.options.baseUrl.replace(/\/$/, "")}/chat/completions`, {
         method: "POST",
         headers: { "content-type": "application/json", authorization: `Bearer ${this.options.apiKey}` },
-        body: JSON.stringify({ model: this.model, messages, tools: toolDefs, tool_choice: "auto" }),
+        body: JSON.stringify({
+          model: this.model,
+          messages,
+          tools: toolDefs,
+          tool_choice: requireTool && !this.requiredUnsupported ? "required" : "auto",
+        }),
       });
       if (res.ok) {
         const data = (await res.json()) as CompletionResponse;
@@ -142,6 +153,11 @@ export class OpenAICompatProvider implements AiProvider {
       const text = await res.text();
       const quota = res.status === 429;
       const unavailable = res.status === 404;
+      if (res.status === 400 && requireTool && !this.requiredUnsupported && /tool_choice/i.test(text)) {
+        this.requiredUnsupported = true;
+        attempt = -1;
+        continue;
+      }
       if (!quota && !unavailable && res.status < 500) {
         throw new Error(`${this.name} API error ${res.status}: ${text.slice(0, 500)}`);
       }
@@ -150,7 +166,6 @@ export class OpenAICompatProvider implements AiProvider {
       const wait = quota
         ? (parseRetryDelayMs(text, res.headers.get("retry-after")) ?? base * 2 ** attempt)
         : base * 2 ** attempt;
-      lastWait = wait;
       if (!unavailable && wait <= MAX_WAIT_MS && attempt < 4) {
         console.warn(`${this.name} API ${res.status} on ${this.model}; retrying in ${Math.ceil(wait / 1000)}s.`);
         await sleep(wait);
@@ -169,8 +184,8 @@ export class OpenAICompatProvider implements AiProvider {
       }
       if (quota)
         throw new AiQuotaError(
-          `${this.name} free-tier quota is used up on every model tried (${this.models.join(", ")}). It resets in ${describeWait(lastWait)}.`,
-          lastWait,
+          `${this.name} free-tier quota is used up on every model tried (${this.models.join(", ")}). It resets in ${describeWait(wait)}.`,
+          wait,
         );
       throw new Error(`${this.name} API error ${res.status}: ${text.slice(0, 500)}`);
     }
@@ -195,9 +210,10 @@ export class OpenAICompatProvider implements AiProvider {
 
     const limit = request.maxIterations ?? this.maxIterations;
     for (let i = 0; i < limit + 1 && output === null; i++) {
-      // On the last round, only the submit tool is offered so the model has to answer.
-      const offered = i >= limit - 1 ? [submit] : tools;
-      const message = await this.complete(messages, offered);
+      // On the last round, or after a nudge, only the submit tool is offered and a call is required,
+      // because some models otherwise answer in plain text and their findings would be lost.
+      const final = i >= limit - 1 || nudged;
+      const message = await this.complete(messages, final ? [submit] : tools, final);
       messages.push(message);
 
       const calls = message.tool_calls ?? [];

@@ -96,6 +96,17 @@ describe("OpenAICompatProvider.runAgent", () => {
     expect(unknown.content).toBe("Error: there is no tool named rm_rf.");
   });
 
+  it("requires the submit call after a nudge, and falls back to auto if tool_choice is rejected", async () => {
+    const { provider, requests } = fake([
+      reply({ content: "Here are my findings in prose." }),
+      { status: 400, body: { error: { message: "Unsupported tool_choice value" } } },
+      reply({ tool_calls: [call("a", "submit", { answers: ["x"], note: null })] }),
+    ]);
+    const result = await provider.runAgent({ system: "s", user: "u", tools: [], submit });
+    expect(result.output).toEqual({ answers: ["x"], note: null });
+    expect(requests.map((r) => r.tool_choice)).toEqual(["auto", "required", "auto"]);
+  });
+
   it("nudges once when the model answers in text, then gives up", async () => {
     const { provider, requests } = fake([reply({ content: "Looks fine." }), reply({ content: "Still fine." })]);
     const result = await provider.runAgent({ system: "s", user: "u", tools: [], submit });
@@ -113,6 +124,7 @@ describe("OpenAICompatProvider.runAgent", () => {
     await provider.runAgent({ system: "s", user: "u", tools: repoToolList(root), submit, maxIterations: 2 });
     expect(requests[0].tools.length).toBe(5);
     expect(requests[1].tools.map((t: { function: { name: string } }) => t.function.name)).toEqual(["submit"]);
+    expect(requests[1].tool_choice).toBe("required");
   });
 
   it("retries rate-limited and server errors, but not client errors", async () => {
