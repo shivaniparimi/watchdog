@@ -34,7 +34,8 @@ function anchorLine(f: Finding, patch: ParsedPatch | undefined): number | null {
 export function inlineComments(result: PipelineResult): InlineComment[] {
   const comments: InlineComment[] = [];
   for (const f of result.findings) {
-    if (!isGap(f) || f.verdict.uncertain) continue;
+    // Gaps found by the mutation check get their own, more specific comments.
+    if (!isGap(f) || f.verdict.uncertain || f.verdict.source === "mutation") continue;
     const line = anchorLine(f, result.patches.get(f.path));
     if (line === null) continue;
 

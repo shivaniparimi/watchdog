@@ -65,6 +65,21 @@ on:
         description: Globs the AI review and test-gap finder skip, one per line or comma-separated.
         type: string
         default: ""
+      verify-findings:
+        description: Prove suspected bugs by writing and running a test for each (needs an AI key and a supported test runner).
+        type: boolean
+        default: true
+      mutation-testing:
+        description: Break changed lines on purpose and check the tests notice (no AI needed).
+        type: boolean
+        default: true
+      max-mutants:
+        type: number
+        default: 30
+      setup-command:
+        description: Shell command that installs the project's dependencies so its tests can run. Detected automatically when empty.
+        type: string
+        default: ""
     secrets:
       GEMINI_API_KEY:
         description: Free Google Gemini API key from aistudio.google.com. Used for the AI steps when set.
@@ -375,6 +390,8 @@ jobs:
     permissions:
       contents: read
       pull-requests: write
+    env:
+      HAS_AI_KEY: ${{ secrets.GEMINI_API_KEY != '' || secrets.ANTHROPIC_API_KEY != '' }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -391,6 +408,40 @@ jobs:
         with:
           name: watchdog-lint
           path: ${{ runner.temp }}/watchdog-lint
+      # Install the project's dependencies so Watchdog can run its tests.
+      - if: ${{ inputs.verify-findings && env.HAS_AI_KEY == 'true' && needs.detect.outputs.has-js == 'true' }}
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - if: ${{ inputs.verify-findings && env.HAS_AI_KEY == 'true' && needs.detect.outputs.has-python == 'true' }}
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - name: Install project dependencies
+        if: ${{ inputs.verify-findings && env.HAS_AI_KEY == 'true' }}
+        continue-on-error: true
+        env:
+          SETUP_COMMAND: ${{ inputs.setup-command }}
+          HAS_JS: ${{ needs.detect.outputs.has-js }}
+          HAS_PYTHON: ${{ needs.detect.outputs.has-python }}
+        run: .watchdog/scripts/setup-project.sh
+      # Install the project's dependencies so Watchdog can run its tests.
+      - if: ${{ inputs.mutation-testing && needs.detect.outputs.has-js == 'true' }}
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - if: ${{ inputs.mutation-testing && needs.detect.outputs.has-python == 'true' }}
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - name: Install project dependencies
+        if: ${{ inputs.mutation-testing }}
+        continue-on-error: true
+        env:
+          SETUP_COMMAND: ${{ inputs.setup-command }}
+          HAS_JS: ${{ needs.detect.outputs.has-js }}
+          HAS_PYTHON: ${{ needs.detect.outputs.has-python }}
+        run: .watchdog/scripts/setup-project.sh
       - uses: ./.watchdog
         with:
           task: review
@@ -405,6 +456,7 @@ jobs:
           fail-on-severity: ${{ inputs.fail-on-severity }}
           ignore-paths: ${{ inputs.ignore-paths }}
           lint-results: ${{ runner.temp }}/watchdog-lint
+          verify-findings: ${{ inputs.verify-findings }}
 
   test-gap:
     name: Test gaps
@@ -434,6 +486,8 @@ jobs:
           ai-provider: ${{ inputs.ai-provider }}
           model: ${{ inputs.model }}
           fail-on: ${{ inputs.test-gap-fail-on }}
+          mutation-testing: ${{ inputs.mutation-testing }}
+          max-mutants: ${{ inputs.max-mutants }}
           ignore-paths: ${{ inputs.ignore-paths }}
 
   summary:
