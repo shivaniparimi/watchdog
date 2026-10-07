@@ -4,7 +4,7 @@ Automated pull request checks for JavaScript/TypeScript, Python, Java, C/C++ and
 
 - **Lints and formats** the changed files, commits safe fixes back to the PR branch, and annotates the problems that remain.
 - **Scans for security problems** with CodeQL, npm audit, pip-audit, Bandit and GitHub's dependency review.
-- **Reviews the code with Claude**, posting inline comments on real issues (with one-click suggested fixes) and a summary with a 1–10 score.
+- **Reviews the code with AI** (Google Gemini's free tier by default, or Claude), posting inline comments on real issues (with one-click suggested fixes) and a summary with a 1–10 score.
 - **Finds test gaps**: functions whose logic changed but no test covers the change.
 - **Summarizes** every check in one table.
 
@@ -30,7 +30,7 @@ Adding it to a repository takes one small workflow file. Repos without their own
        secrets: inherit
    ```
 
-2. Add an `ANTHROPIC_API_KEY` secret (Settings → Secrets and variables → Actions) to turn on the AI review and AI test-gap checks. Without it, everything else still runs.
+2. Turn on the AI review and AI test-gap checks with a **free** Gemini API key: create one at [aistudio.google.com/apikey](https://aistudio.google.com/apikey) (Google account, no credit card) and add it as a `GEMINI_API_KEY` secret (Settings → Secrets and variables → Actions). To use Claude instead, add an `ANTHROPIC_API_KEY` secret. Without any key, everything else still runs.
 
 3. Open a pull request.
 
@@ -38,21 +38,22 @@ Adding it to a repository takes one small workflow file. Repos without their own
 
 Pass these under `with:` in the workflow above.
 
-| Input               | Default           | What it does                                                                              |
-| ------------------- | ----------------- | ----------------------------------------------------------------------------------------- |
-| `auto-fix`          | `true`            | Commit formatter and safe lint fixes back to the PR branch (same-repo PRs only).          |
-| `fail-on-lint`      | `true`            | Fail when lint or formatting problems remain after auto-fix.                              |
-| `ai-review`         | `true`            | Run the AI code review.                                                                   |
-| `test-gap`          | `true`            | Run the test-gap finder.                                                                  |
-| `codeql`            | `true`            | Run CodeQL for the languages that changed.                                                |
-| `dependency-review` | `true`            | Fail on newly added dependencies with high-severity vulnerabilities.                      |
-| `model`             | `claude-opus-5-5` | Claude model for the AI checks.                                                           |
-| `min-severity`      | `minor`           | Lowest AI finding severity posted inline: `critical`, `major`, `minor`, `nit`, or `none`. |
-| `max-comments`      | `15`              | Maximum AI inline comments per run. The most severe are kept.                             |
-| `fail-on-severity`  | `none`            | Fail the AI review on findings at this severity or worse.                                 |
-| `test-gap-fail-on`  | `none`            | Fail the test-gap check on gaps at this risk or higher: `low`, `medium`, `high`.          |
-| `ignore-paths`      | (none)            | Globs the AI review and test-gap finder skip.                                             |
-| `watchdog-ref`      | `main`            | Pin Watchdog to a tag or commit.                                                          |
+| Input               | Default            | What it does                                                                              |
+| ------------------- | ------------------ | ----------------------------------------------------------------------------------------- |
+| `auto-fix`          | `true`             | Commit formatter and safe lint fixes back to the PR branch (same-repo PRs only).          |
+| `fail-on-lint`      | `true`             | Fail when lint or formatting problems remain after auto-fix.                              |
+| `ai-review`         | `true`             | Run the AI code review.                                                                   |
+| `test-gap`          | `true`             | Run the test-gap finder.                                                                  |
+| `codeql`            | `true`             | Run CodeQL for the languages that changed.                                                |
+| `dependency-review` | `true`             | Fail on newly added dependencies with high-severity vulnerabilities.                      |
+| `ai-provider`       | `auto`             | `auto` (Gemini if `GEMINI_API_KEY` is set, else Claude), `gemini`, or `anthropic`.        |
+| `model`             | (provider default) | Model override. Defaults: `gemini-3.8-flash` (free tier) or `claude-opus-5-5`.            |
+| `min-severity`      | `minor`            | Lowest AI finding severity posted inline: `critical`, `major`, `minor`, `nit`, or `none`. |
+| `max-comments`      | `15`               | Maximum AI inline comments per run. The most severe are kept.                             |
+| `fail-on-severity`  | `none`             | Fail the AI review on findings at this severity or worse.                                 |
+| `test-gap-fail-on`  | `none`             | Fail the test-gap check on gaps at this risk or higher: `low`, `medium`, `high`.          |
+| `ignore-paths`      | (none)             | Globs the AI review and test-gap finder skip.                                             |
+| `watchdog-ref`      | `main`             | Pin Watchdog to a tag or commit.                                                          |
 
 Optional secret: `WATCHDOG_PUSH_TOKEN`, a fine-grained token with contents write access. With GitHub's default token, the run started by the auto-fix commit waits for someone to approve it under the Actions tab. Commits pushed with this token start their runs normally.
 
@@ -82,10 +83,10 @@ Problems appear as annotations on the PR's changed lines, and the job summary li
 
 ### AI code review
 
-Claude reviews the **whole pull request in the context of the repository**, not just the changed lines:
+The AI reviews the **whole pull request in the context of the repository**, not just the changed lines:
 
 - **The whole PR goes in:** title, description, every commit message, and every changed file (code, docs and config) with its diff and full new content. Lockfiles, binaries and deleted files are listed by name. Files too large for the prompt budget are still reviewed through a `get_diff` tool.
-- **It reads the code around the change.** Claude has read-only tools for the PR's checkout (`read_file`, `search_code`, `list_files`). It uses them to find every caller of a changed function, read the types and helpers the change depends on, and check related tests and configs. So it can catch a change that breaks code in a file the PR didn't touch.
+- **It reads the code around the change.** The model has read-only tools for the PR's checkout (`read_file`, `search_code`, `list_files`). It uses them to find every caller of a changed function, read the types and helpers the change depends on, and check related tests and configs. So it can catch a change that breaks code in a file the PR didn't touch.
 - **Structured findings:** each has a severity, category, exact line, explanation, and optionally a replacement that GitHub shows as a one-click **suggested change**.
 
 Then:
@@ -100,7 +101,7 @@ Then:
 For each function the PR changed, Watchdog finds its test files (by name and by import), then checks whether a test covers the change:
 
 1. **Rule checks** (free): a test changed in this PR mentions the function → covered. No test mentions it → untested. Tests exist but weren't updated → unclear.
-2. **Claude** decides the unclear and untested cases. It searches the whole repository for tests the rule check missed (for example, a function tested through its caller), rates the risk, and suggests a test in the repository's own style.
+2. **The AI** decides the unclear and untested cases. It searches the whole repository for tests the rule check missed (for example, a function tested through its caller), rates the risk, and suggests a test in the repository's own style.
 
 Untested functions get an inline comment, and a summary table lists every changed function.
 
@@ -117,8 +118,8 @@ FILES_DIR=/tmp/wd-files ../watchdog/scripts/lint.sh fix python
 
 # AI review or test gaps for your working tree vs. main (prints results, posts nothing)
 cd ../watchdog
-ANTHROPIC_API_KEY=sk-... npm run local -- --task review --repo ../my-project
-ANTHROPIC_API_KEY=sk-... npm run local -- --task test-gap --repo ../my-project
+GEMINI_API_KEY=... npm run local -- --task review --repo ../my-project      # or ANTHROPIC_API_KEY=...
+GEMINI_API_KEY=... npm run local -- --task test-gap --repo ../my-project
 npm run local -- --task test-gap --repo ../my-project --no-ai          # rule checks only
 
 # Pre-commit hook: auto-fix staged files, block the commit if problems remain
@@ -137,8 +138,9 @@ scripts/security.sh              npm audit, pip-audit, Bandit
 scripts/install-hook.sh          Installs the pre-commit hook
 configs/                         Default linter configs and the annotation problem matcher
 src/agent/                       Repository tools (read, search, list, diff) and the exploration loop
-src/review/                      AI code review: collect the PR, run Claude, validate findings, report
-src/*.ts                         Test-gap finder: diff parsing, function detection, test matching, Claude judge
+src/ai/                          AI providers: Gemini (OpenAI-compatible API, free tier) and Claude
+src/review/                      AI code review: collect the PR, run the model, validate findings, report
+src/*.ts                         Test-gap finder: diff parsing, function detection, test matching, AI judge
 src/tasks/, src/index.ts         Action entry point
 src/local.ts                     Local CLI
 ```
@@ -153,7 +155,8 @@ npm run build      # bundle to dist/index.cjs; commit dist/ so the Action can ru
 
 ## Known limits
 
-- The AI checks need an Anthropic API key and cost money per PR. Larger PRs, and more exploration, cost more; `max-iterations`, `ignore-paths` and the prompt budget keep this bounded.
+- **Gemini's free tier** has tight rate limits that Google changes often; Watchdog uses smaller prompts and fewer exploration rounds on it, and retries when throttled. On the free tier, [Google may use what you send to improve its products and humans may review it](https://ai.google.dev/gemini-api/terms), so use a paid key or Claude for private code you don't want shared.
+- With Claude, the AI checks cost money per PR. Larger PRs and more exploration cost more; `max-iterations`, `ignore-paths` and the prompt budget keep this bounded.
 - Function detection for the test-gap finder uses patterns, not a full parser, so unusual syntax can be missed.
 - clang-tidy is advisory unless the repo provides `compile_commands.json`, because it can't know the real compiler flags otherwise.
 - CodeQL results upload only for same-repo PRs. Private repositories need GitHub Advanced Security for CodeQL and dependency review.

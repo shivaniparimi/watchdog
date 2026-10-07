@@ -1,14 +1,10 @@
-import Anthropic from "@anthropic-ai/sdk";
-import { betaZodOutputFormat } from "@anthropic-ai/sdk/helpers/beta/zod";
 import { z } from "zod";
-import { runAgent } from "./agent/agent.js";
-import { repoTools } from "./agent/repoTools.js";
+import { repoToolList } from "./agent/repoTools.js";
+import type { AiProvider } from "./ai/index.js";
 import type { AnalyzedSymbol, Verdict } from "./types.js";
 
-export const DEFAULT_MODEL = "claude-opus-5-5";
-const BATCH_SIZE = 6;
-/** Functions per exploration run; each run can search the repository for every one of them. */
-const AGENT_BATCH_SIZE = 12;
+/** Functions per run; each run can search the repository for every one of them. */
+const BATCH_SIZE = 10;
 
 const VerdictsSchema = z.object({
   verdicts: z.array(
@@ -37,9 +33,9 @@ Decide for each function:
 - reason: one sentence naming the exact untested behavior, or why it is covered or needs no test. Refer to code, not to these instructions.
 - suggested_test: when covered is false and risk is not "none", a short test in the repository's existing test style (match the framework and naming seen in the excerpts). Otherwise an empty string.
 
-Return one verdict per function, using the id given for each.`;
+Give one verdict per function, using the id given for each.`;
 
-// Used when Claude can explore the repository. Kept byte-identical across calls for prompt caching.
+// Used when the model can explore the repository. Kept byte-identical across calls for prompt caching.
 const AGENT_PROMPT = `${SYSTEM_PROMPT}
 
 The test excerpts were found by matching file names and imports, so they can miss tests. Before deciding a function is untested, use search_code to look for tests that exercise it, directly or through the code that calls it, and read_file to check what those tests assert. Mention the test file you relied on in the reason.
@@ -69,9 +65,8 @@ ${tests}
 }
 
 export interface JudgeOptions {
-  client?: Anthropic;
-  model?: string;
-  /** Repository checkout at the PR head. When given, Claude can search it for tests the rule check missed. */
+  provider: AiProvider;
+  /** Repository checkout at the PR head. When given, the model can search it for tests the rule check missed. */
   repoRoot?: string;
 }
 
@@ -85,68 +80,27 @@ function toVerdict(v: z.infer<typeof VerdictsSchema>["verdicts"][number]): Verdi
   };
 }
 
-/** Ask Claude whether each function's changed behavior is tested. Returns verdicts keyed by symbol id. */
-export async function judge(symbols: AnalyzedSymbol[], options: JudgeOptions = {}): Promise<Map<string, Verdict>> {
-  const client = options.client ?? new Anthropic();
-  const model = options.model ?? DEFAULT_MODEL;
+/** Ask the model whether each function's changed behavior is tested. Returns verdicts keyed by symbol id. */
+export async function judge(symbols: AnalyzedSymbol[], options: JudgeOptions): Promise<Map<string, Verdict>> {
   const verdicts = new Map<string, Verdict>();
-
-  if (options.repoRoot) {
-    for (let i = 0; i < symbols.length; i += AGENT_BATCH_SIZE) {
-      const batch = symbols.slice(i, i + AGENT_BATCH_SIZE);
-      const { output } = await runAgent({
-        client,
-        model,
-        system: AGENT_PROMPT,
-        user: batch.map(renderItem).join("\n\n"),
-        tools: repoTools(options.repoRoot),
-        submit: {
-          name: "submit_verdicts",
-          description: "Submit a verdict for every function. Call exactly once, after exploring.",
-          schema: VerdictsSchema,
-        },
-        maxIterations: 20,
-        effort: "medium",
-      });
-      const ids = new Set(batch.map((s) => s.id));
-      for (const v of output?.verdicts ?? []) if (ids.has(v.id)) verdicts.set(v.id, toVerdict(v));
-    }
-    return verdicts;
-  }
-
   for (let i = 0; i < symbols.length; i += BATCH_SIZE) {
     const batch = symbols.slice(i, i + BATCH_SIZE);
-    const response = await client.beta.messages.parse({
-      model,
-      max_tokens: 16000,
-      betas: ["server-side-fallback-2026-07-01"],
-      fallbacks: "default",
-      output_config: {
-        effort: "medium",
-        format: betaZodOutputFormat(VerdictsSchema),
+    const { output } = await options.provider.runAgent({
+      system: options.repoRoot
+        ? AGENT_PROMPT
+        : `${SYSTEM_PROMPT}\n\nCall submit_verdicts exactly once with a verdict for every function.`,
+      user: batch.map(renderItem).join("\n\n"),
+      tools: options.repoRoot ? repoToolList(options.repoRoot) : [],
+      submit: {
+        name: "submit_verdicts",
+        description: "Submit a verdict for every function. Call exactly once, after exploring.",
+        schema: VerdictsSchema,
       },
-      system: [
-        {
-          type: "text",
-          text: SYSTEM_PROMPT,
-          cache_control: { type: "ephemeral" },
-        },
-      ],
-      messages: [{ role: "user", content: batch.map(renderItem).join("\n\n") }],
+      maxIterations: options.repoRoot ? Math.min(20, options.provider.maxIterations) : 2,
+      effort: "medium",
     });
-
-    if (response.stop_reason === "refusal" || !response.parsed_output) {
-      console.warn(
-        `Claude returned no verdicts for ${batch.length} function(s) (stop_reason: ${response.stop_reason}).`,
-      );
-      continue;
-    }
-
     const ids = new Set(batch.map((s) => s.id));
-    for (const v of response.parsed_output.verdicts) {
-      if (ids.has(v.id)) verdicts.set(v.id, toVerdict(v));
-    }
+    for (const v of output?.verdicts ?? []) if (ids.has(v.id)) verdicts.set(v.id, toVerdict(v));
   }
-
   return verdicts;
 }

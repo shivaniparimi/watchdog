@@ -1,7 +1,10 @@
 /**
  * Run Watchdog's AI tasks on a local git repo, comparing the working tree to a base branch.
  *
- *   npm run local -- [--task review|test-gap] [--repo <path>] [--base <ref>] [--no-ai] [--model <id>] [--json]
+ *   npm run local -- [--task review|test-gap] [--repo <path>] [--base <ref>] [--no-ai]
+ *                    [--provider auto|gemini|anthropic] [--model <id>] [--json]
+ *
+ * AI uses GEMINI_API_KEY (free tier) or ANTHROPIC_API_KEY from the environment.
  *
  * Nothing is posted anywhere; results are printed.
  */
@@ -9,9 +12,9 @@ import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { parseArgs } from "node:util";
-import Anthropic from "@anthropic-ai/sdk";
 import { splitGitDiff } from "./diff.js";
-import { DEFAULT_MODEL, judge } from "./judge.js";
+import { createProvider } from "./ai/index.js";
+import { judge } from "./judge.js";
 import { findTestGaps } from "./pipeline.js";
 import { fsRepo } from "./repo.js";
 import { inlineComments, summaryMarkdown } from "./report.js";
@@ -26,7 +29,8 @@ const { values } = parseArgs({
     repo: { type: "string", default: process.cwd() },
     base: { type: "string" },
     "no-ai": { type: "boolean", default: false },
-    model: { type: "string", default: DEFAULT_MODEL },
+    provider: { type: "string", default: "auto" },
+    model: { type: "string" },
     json: { type: "boolean", default: false },
     "max-functions": { type: "string", default: "40" },
     "lint-results": { type: "string" },
@@ -58,6 +62,15 @@ const mergeBase = git("merge-base", base, "HEAD");
 // Diff the working tree against the merge base, so uncommitted changes count too.
 const files = splitGitDiff(git("diff", "--no-color", "--no-ext-diff", "--unified=3", mergeBase));
 const branch = git("rev-parse", "--abbrev-ref", "HEAD");
+const ai = values["no-ai"]
+  ? null
+  : createProvider({
+      provider: values.provider as "auto" | "gemini" | "anthropic",
+      geminiApiKey: process.env.GEMINI_API_KEY,
+      anthropicApiKey: process.env.ANTHROPIC_API_KEY,
+      model: values.model,
+    });
+if (!values["no-ai"] && !ai) console.warn("No GEMINI_API_KEY or ANTHROPIC_API_KEY set; AI steps are skipped.");
 
 async function testGap(): Promise<void> {
   const result = await findTestGaps(
@@ -68,7 +81,7 @@ async function testGap(): Promise<void> {
       failOn: "none",
       maxFunctions: Number(values["max-functions"]),
     },
-    values["no-ai"] ? undefined : (symbols) => judge(symbols, { model: values.model, repoRoot: root }),
+    ai ? (symbols) => judge(symbols, { provider: ai, repoRoot: root }) : undefined,
   );
   if (values.json) return console.log(JSON.stringify(result.findings, null, 2));
 
@@ -81,7 +94,7 @@ async function testGap(): Promise<void> {
 }
 
 async function review(): Promise<void> {
-  if (values["no-ai"]) throw new Error("The review task needs AI; drop --no-ai.");
+  if (!ai) throw new Error("The review task needs AI: set GEMINI_API_KEY (free) or ANTHROPIC_API_KEY.");
   const read = (path: string) => {
     try {
       return readFileSync(join(root, path), "utf8");
@@ -89,7 +102,7 @@ async function review(): Promise<void> {
       return null;
     }
   };
-  const collected = collectReviewFiles(files, read, { ignorePaths: [], maxChars: 400_000 });
+  const collected = collectReviewFiles(files, read, { ignorePaths: [], maxChars: ai.reviewChars });
   const reviewable = [...collected.files, ...collected.deferred];
   if (reviewable.length === 0) return console.log("No reviewable changes.");
 
@@ -99,8 +112,7 @@ async function review(): Promise<void> {
     .filter(Boolean);
   const pr = { title: `Local changes on ${branch}`, body: "", author: "local", commits };
   const options = {
-    client: new Anthropic(),
-    model: values.model!,
+    provider: ai,
     lintResults: readLintResults(values["lint-results"]),
     repoRoot: root,
   };
@@ -118,7 +130,7 @@ async function review(): Promise<void> {
       filesReviewed: reviewable.length,
       listed: collected.listed,
       toolCalls,
-      model: values.model!,
+      model: ai.model,
     }),
   );
   if (comments.length > 0) {

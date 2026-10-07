@@ -34,9 +34,14 @@ on:
       dependency-review:
         type: boolean
         default: true
-      model:
+      ai-provider:
+        description: Which AI to use, auto (Gemini if GEMINI_API_KEY is set, else Claude), gemini or anthropic.
         type: string
-        default: claude-opus-5-5
+        default: auto
+      model:
+        description: Model override (default gemini-3.8-flash for Gemini, claude-opus-5-5 for Claude).
+        type: string
+        default: ""
       min-severity:
         description: Lowest AI finding severity posted inline (critical, major, minor, nit, none).
         type: string
@@ -45,9 +50,9 @@ on:
         type: number
         default: 15
       max-iterations:
-        description: Maximum API round trips while Claude explores the repository during review.
+        description: Maximum API round trips while the model explores the repository during review (0 = provider default).
         type: number
-        default: 30
+        default: 0
       fail-on-severity:
         description: Fail the AI review job on findings at this severity or worse (critical, major, minor, nit, none).
         type: string
@@ -61,7 +66,11 @@ on:
         type: string
         default: ""
     secrets:
+      GEMINI_API_KEY:
+        description: Free Google Gemini API key from aistudio.google.com. Used for the AI steps when set.
+        required: false
       ANTHROPIC_API_KEY:
+        description: Anthropic API key, to use Claude for the AI steps instead.
         required: false
       WATCHDOG_PUSH_TOKEN:
         description: Optional token for pushing auto-fixes. Unlike the default token, its pushes trigger new workflow runs.
@@ -386,11 +395,13 @@ jobs:
         with:
           task: review
           head-sha: ${{ needs.lint.outputs.head-sha || env.HEAD_SHA }}
+          gemini-api-key: ${{ secrets.GEMINI_API_KEY }}
           anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
+          ai-provider: ${{ inputs.ai-provider }}
           model: ${{ inputs.model }}
           min-severity: ${{ inputs.min-severity }}
           max-comments: ${{ inputs.max-comments }}
-          max-iterations: ${{ inputs.max-iterations }}
+          max-iterations: ${{ inputs.max-iterations != 0 && inputs.max-iterations || '' }}
           fail-on-severity: ${{ inputs.fail-on-severity }}
           ignore-paths: ${{ inputs.ignore-paths }}
           lint-results: ${{ runner.temp }}/watchdog-lint
@@ -418,7 +429,9 @@ jobs:
         with:
           task: test-gap
           head-sha: ${{ needs.lint.outputs.head-sha || env.HEAD_SHA }}
+          gemini-api-key: ${{ secrets.GEMINI_API_KEY }}
           anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
+          ai-provider: ${{ inputs.ai-provider }}
           model: ${{ inputs.model }}
           fail-on: ${{ inputs.test-gap-fail-on }}
           ignore-paths: ${{ inputs.ignore-paths }}

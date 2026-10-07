@@ -1,5 +1,5 @@
 name: Watchdog
-description: AI code review and test-gap detection for pull requests, powered by Claude.
+description: AI code review and test-gap detection for pull requests, using Gemini (free tier) or Claude.
 branding:
   icon: shield
   color: blue
@@ -13,12 +13,18 @@ inputs:
   github-token:
     description: Token used to read the PR and post comments.
     default: ${{ github.token }}
-  anthropic-api-key:
-    description: Anthropic API key. Without it, the review is skipped and test-gap runs rule checks only.
+  gemini-api-key:
+    description: Google Gemini API key (free from aistudio.google.com). Used by default when set.
     required: false
+  anthropic-api-key:
+    description: Anthropic API key, to use Claude instead. Without any key, the review is skipped and test-gap runs rule checks only.
+    required: false
+  ai-provider:
+    description: Which AI to use, "auto" (Gemini if its key is set, else Claude), "gemini" or "anthropic".
+    default: auto
   model:
-    description: Claude model to use.
-    default: claude-opus-5-5
+    description: Model override. Defaults to gemini-3.8-flash for Gemini and claude-opus-5-5 for Claude.
+    default: ""
   ignore-paths:
     description: Glob patterns to skip, one per line or comma-separated.
     default: ""
@@ -32,11 +38,11 @@ inputs:
     description: "[review] Maximum inline comments per run. The most severe are kept."
     default: "15"
   max-review-chars:
-    description: "[review] Characters of diff and file content put directly in the prompt. Files beyond it are read through tools."
-    default: "400000"
+    description: "[review] Characters of diff and file content put directly in the prompt; files beyond it are read through tools. Default depends on the provider."
+    default: ""
   max-iterations:
-    description: "[review] Maximum API round trips while Claude explores the repository."
-    default: "30"
+    description: "[review] Maximum API round trips while the model explores the repository. Default depends on the provider."
+    default: ""
   fail-on-severity:
     description: "[review] Fail the check when a finding at this severity or worse exists (critical, major, minor, nit), or none."
     default: none

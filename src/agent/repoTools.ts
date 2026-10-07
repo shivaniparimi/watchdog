@@ -1,8 +1,8 @@
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { isAbsolute, relative, resolve } from "node:path";
-import { betaZodTool } from "@anthropic-ai/sdk/helpers/beta/zod";
 import { z } from "zod";
+import type { ToolDef } from "../ai/types.js";
 
 const MAX_READ_LINES = 400;
 const MAX_OUTPUT_CHARS = 40_000;
@@ -43,17 +43,22 @@ function git(root: string, args: string[]): string {
   }
 }
 
+/** Identity helper that keeps each tool's input type while building a ToolDef. */
+function tool<T extends z.ZodObject>(def: ToolDef<T>): ToolDef<T> {
+  return def;
+}
+
 /** Read-only tools for exploring the repository at the PR's head commit. */
 export function repoTools(root: string, diffs: Map<string, string> = new Map()) {
-  const readFile = betaZodTool({
+  const readFile = tool({
     name: "read_file",
     description:
       "Read a file from the repository at the PR's head commit, with line numbers. Use it to see code the PR " +
       `doesn't change: callers, definitions, types, tests, configs. Returns at most ${MAX_READ_LINES} lines per call.`,
     inputSchema: z.object({
       path: z.string().describe("Path relative to the repository root"),
-      start_line: z.number().int().optional().describe("First line to return (1-based)"),
-      end_line: z.number().int().optional().describe("Last line to return (inclusive)"),
+      start_line: z.number().optional().describe("First line to return (1-based)"),
+      end_line: z.number().optional().describe("Last line to return (inclusive)"),
     }),
     run: async ({ path, start_line, end_line }) => {
       const target = safePath(root, path);
@@ -61,8 +66,12 @@ export function repoTools(root: string, diffs: Map<string, string> = new Map()) 
       if (!existsSync(target)) return `Error: ${path} does not exist.`;
       if (statSync(target).isDirectory()) return `Error: ${path} is a directory; use list_files.`;
       const lines = readFileSync(target, "utf8").split("\n");
-      const start = Math.max(1, start_line ?? 1);
-      const end = Math.min(lines.length, end_line ?? start + MAX_READ_LINES - 1, start + MAX_READ_LINES - 1);
+      const start = Math.max(1, Math.round(start_line ?? 1));
+      const end = Math.min(
+        lines.length,
+        Math.round(end_line ?? start + MAX_READ_LINES - 1),
+        start + MAX_READ_LINES - 1,
+      );
       const body = lines
         .slice(start - 1, end)
         .map((l, i) => `${start + i}: ${l}`)
@@ -73,7 +82,7 @@ export function repoTools(root: string, diffs: Map<string, string> = new Map()) 
     },
   });
 
-  const searchCode = betaZodTool({
+  const searchCode = tool({
     name: "search_code",
     description:
       "Search tracked files for a pattern (git grep), e.g. to find every caller of a changed function or where " +
@@ -100,7 +109,7 @@ export function repoTools(root: string, diffs: Map<string, string> = new Map()) 
     },
   });
 
-  const listFiles = betaZodTool({
+  const listFiles = tool({
     name: "list_files",
     description: `List tracked files, optionally under a directory or matching a glob. Returns up to ${MAX_LIST_FILES} paths.`,
     inputSchema: z.object({
@@ -119,7 +128,7 @@ export function repoTools(root: string, diffs: Map<string, string> = new Map()) 
     },
   });
 
-  const getDiff = betaZodTool({
+  const getDiff = tool({
     name: "get_diff",
     description: "Get the PR's diff for one changed file, with new-file line numbers (L<n>).",
     inputSchema: z.object({ path: z.string().describe("Changed file path") }),
@@ -127,4 +136,9 @@ export function repoTools(root: string, diffs: Map<string, string> = new Map()) 
   });
 
   return [readFile, searchCode, listFiles, getDiff] as const;
+}
+
+/** The same tools, typed loosely for passing to a provider. */
+export function repoToolList(root: string, diffs?: Map<string, string>): ToolDef[] {
+  return [...repoTools(root, diffs)] as unknown as ToolDef[];
 }
