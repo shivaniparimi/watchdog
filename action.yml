@@ -7,6 +7,9 @@ inputs:
   task:
     description: What to run, "review" (AI code review) or "test-gap" (find changed functions with no test).
     default: review
+  head-sha:
+    description: Commit to comment on, when an earlier step pushed to the PR (defaults to the event's head commit).
+    default: ""
   github-token:
     description: Token used to read the PR and post comments.
     default: ${{ github.token }}

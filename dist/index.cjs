@@ -65621,7 +65621,7 @@ async function loadContext(defaultModel) {
     owner: context2.repo.owner,
     repo: context2.repo.repo,
     pullNumber: pull.number,
-    headSha: pull.head.sha
+    headSha: getInput("head-sha") || pull.head.sha
   };
   const apiKey = getInput("anthropic-api-key");
   if (apiKey) setSecret(apiKey);

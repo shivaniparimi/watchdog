@@ -54,7 +54,7 @@ Pass these under `with:` in the workflow above.
 | `ignore-paths`      | (none)            | Globs the AI review and test-gap finder skip.                                             |
 | `watchdog-ref`      | `main`            | Pin Watchdog to a tag or commit.                                                          |
 
-Optional secret: `WATCHDOG_PUSH_TOKEN`, a fine-grained token with contents write access. Commits pushed with GitHub's default token don't start new workflow runs, so with the default the auto-fix commit has no checks of its own. Commits pushed with this token do.
+Optional secret: `WATCHDOG_PUSH_TOKEN`, a fine-grained token with contents write access. With GitHub's default token, the run started by the auto-fix commit waits for someone to approve it under the Actions tab. Commits pushed with this token start their runs normally.
 
 ## What each check does
 
@@ -70,7 +70,7 @@ Only the files the PR changed are checked. If the repository has its own config 
 | C / C++                                  | clang-format            | clang-tidy (advisory without `compile_commands.json`)    |
 | SQL                                      | SQLFluff                | SQLFluff                                                 |
 
-Problems appear as annotations on the PR's changed lines, and the job summary lists each tool's result. With `auto-fix` on, formatting fixes and safe lint fixes are committed to the PR branch as `github-actions[bot]`. Fork PRs are checked but not auto-fixed, since GitHub doesn't allow pushing to forks.
+Problems appear as annotations on the PR's changed lines, and the job summary lists each tool's result. The AI review and test-gap jobs wait for auto-fix and comment on the fixed commit, so their comments don't go stale. With `auto-fix` on, formatting fixes and safe lint fixes are committed to the PR branch as `github-actions[bot]`. Fork PRs are checked but not auto-fixed, since GitHub doesn't allow pushing to forks.
 
 ### Security
 
@@ -157,4 +157,5 @@ npm run build      # bundle to dist/index.cjs; commit dist/ so the Action can ru
 - Function detection for the test-gap finder uses patterns, not a full parser, so unusual syntax can be missed.
 - clang-tidy is advisory unless the repo provides `compile_commands.json`, because it can't know the real compiler flags otherwise.
 - CodeQL results upload only for same-repo PRs. Private repositories need GitHub Advanced Security for CodeQL and dependency review.
-- Auto-fix commits made with the default token don't trigger new workflow runs (see `WATCHDOG_PUSH_TOKEN`).
+- With the default token, the run started by an auto-fix commit waits for manual approval (see `WATCHDOG_PUSH_TOKEN`).
+- Dependency review needs the repository's dependency graph turned on (Settings → Code security). Without it, the check is skipped with a warning.

@@ -37,7 +37,7 @@ export async function loadContext(defaultModel: string): Promise<TaskContext | n
     owner: context.repo.owner,
     repo: context.repo.repo,
     pullNumber: pull.number,
-    headSha: pull.head.sha,
+    headSha: core.getInput("head-sha") || pull.head.sha,
   };
   const apiKey = core.getInput("anthropic-api-key");
   if (apiKey) core.setSecret(apiKey);

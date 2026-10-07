@@ -4,12 +4,25 @@
       "owner": "watchdog-lint",
       "pattern": [
         {
-          "regexp": "^(?:\\[(?:WARN|ERROR)\\]\\s+)?([^\\s:]+\\.[A-Za-z0-9]+):(\\d+):(?:(\\d+):)?\\s*(?:(error|warning|note)\\s*:\\s*)?(.+)$",
+          "regexp": "^(?:\\[ERROR\\]\\s+)?([^\\s:\\[]+\\.[A-Za-z0-9]+):(\\d+):(?:(\\d+):)?\\s*(?:(error|warning|note)\\s*:\\s*)?(.+)$",
           "file": 1,
           "line": 2,
           "column": 3,
           "severity": 4,
           "message": 5
+        }
+      ]
+    },
+    {
+      "owner": "watchdog-checkstyle",
+      "severity": "warning",
+      "pattern": [
+        {
+          "regexp": "^\\[WARN\\]\\s+(\\S+\\.java):(\\d+):(?:(\\d+):)?\\s*(.+)$",
+          "file": 1,
+          "line": 2,
+          "column": 3,
+          "message": 4
         }
       ]
     },
