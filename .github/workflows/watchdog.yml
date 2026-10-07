@@ -425,23 +425,6 @@ jobs:
           HAS_JS: ${{ needs.detect.outputs.has-js }}
           HAS_PYTHON: ${{ needs.detect.outputs.has-python }}
         run: .watchdog/scripts/setup-project.sh
-      # Install the project's dependencies so Watchdog can run its tests.
-      - if: ${{ inputs.mutation-testing && needs.detect.outputs.has-js == 'true' }}
-        uses: actions/setup-node@v7
-        with:
-          node-version: 22
-      - if: ${{ inputs.mutation-testing && needs.detect.outputs.has-python == 'true' }}
-        uses: actions/setup-python@v7
-        with:
-          python-version: "3.12"
-      - name: Install project dependencies
-        if: ${{ inputs.mutation-testing }}
-        continue-on-error: true
-        env:
-          SETUP_COMMAND: ${{ inputs.setup-command }}
-          HAS_JS: ${{ needs.detect.outputs.has-js }}
-          HAS_PYTHON: ${{ needs.detect.outputs.has-python }}
-        run: .watchdog/scripts/setup-project.sh
       - uses: ./.watchdog
         with:
           task: review
@@ -477,6 +460,23 @@ jobs:
           ref: ${{ inputs.watchdog-ref }}
           path: .watchdog
           persist-credentials: false
+      # Install the project's dependencies so Watchdog can run its tests.
+      - if: ${{ inputs.mutation-testing && needs.detect.outputs.has-js == 'true' }}
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - if: ${{ inputs.mutation-testing && needs.detect.outputs.has-python == 'true' }}
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - name: Install project dependencies
+        if: ${{ inputs.mutation-testing }}
+        continue-on-error: true
+        env:
+          SETUP_COMMAND: ${{ inputs.setup-command }}
+          HAS_JS: ${{ needs.detect.outputs.has-js }}
+          HAS_PYTHON: ${{ needs.detect.outputs.has-python }}
+        run: .watchdog/scripts/setup-project.sh
       - uses: ./.watchdog
         with:
           task: test-gap
