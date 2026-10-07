@@ -49,6 +49,33 @@ describe("candidateTests", () => {
   });
 });
 
+describe("candidateTests import resolution", () => {
+  it("only counts relative imports that resolve to the source file itself", () => {
+    const repo = memoryRepo({
+      "examples/demo/pricing.ts": "",
+      "test/pipeline.test.ts":
+        'const sample = `import { price } from "./pricing";`;\nimport { x } from "../src/pipeline.js";',
+      "test/other.test.ts": 'import { price } from "./pricing";', // resolves to test/pricing, a different file
+      "examples/demo/flow.test.ts": 'import { price } from "./pricing.js";',
+      "test/alias.test.ts": 'import { price } from "@/demo/pricing";',
+      "test/dynamic.test.ts": 'const m = await import("../examples/demo/pricing");',
+    });
+    expect(candidateTests("examples/demo/pricing.ts", repo).sort()).toEqual([
+      "examples/demo/flow.test.ts",
+      "test/alias.test.ts",
+      "test/dynamic.test.ts",
+    ]);
+  });
+
+  it("matches an import of a folder to its index file", () => {
+    const repo = memoryRepo({
+      "src/cart/index.ts": "",
+      "test/checkout.test.ts": 'import { total } from "../src/cart";',
+    });
+    expect(candidateTests("src/cart/index.ts", repo)).toEqual(["test/checkout.test.ts"]);
+  });
+});
+
 describe("mentionExcerpt", () => {
   it("returns numbered lines around whole-word mentions only", () => {
     const content = "a\nb\nexpect(applyDiscount(10)).toBe(5)\nc\nd\nconst applyDiscountX = 1";

@@ -67925,7 +67925,10 @@ function fsRepo(root, overrides = /* @__PURE__ */ new Map()) {
 
 // src/verify/prove.ts
 var import_node_fs5 = require("node:fs");
-var import_node_path5 = require("node:path");
+var import_node_path6 = require("node:path");
+
+// src/testMap.ts
+var import_node_path4 = require("node:path");
 
 // src/classify.ts
 var EXTENSIONS = {
@@ -67995,15 +67998,30 @@ function testStem(path5) {
 function escapeRegex2(s) {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
-function importsModule(testContent, sourcePath, lang) {
+function jsSpecifiers(content) {
+  return [
+    ...content.matchAll(
+      /^\s*(?:import|export)\b[^"'`;]*?["']([^"']+)["']|\b(?:require|import)\(\s*["']([^"']+)["']\s*\)/gm
+    )
+  ].map((m) => m[1] ?? m[2]);
+}
+function importsModule(testContent, sourcePath, lang, testPath) {
   const stem = escapeRegex2(sourceStem(sourcePath));
   const fileStem = escapeRegex2(stripExt(basename(sourcePath)));
   switch (lang) {
     case "ts":
-    case "js":
-      return new RegExp(`(from|require\\(|import\\()\\s*["'][^"']*\\/(${stem}|${fileStem})(\\.[cm]?[jt]sx?)?["']`).test(
-        testContent
-      );
+    case "js": {
+      const target = stripExt(sourcePath);
+      const targetDir = sourceStem(sourcePath) === basename(dirname2(sourcePath)) ? dirname2(sourcePath) : null;
+      return jsSpecifiers(testContent).some((spec) => {
+        const bare = spec.replace(/\.[cm]?[jt]sx?$/, "");
+        if (bare.startsWith(".")) {
+          const resolved = import_node_path4.posix.normalize(import_node_path4.posix.join(dirname2(testPath), bare));
+          return resolved === target || targetDir !== null && resolved === targetDir;
+        }
+        return new RegExp(`(^|/)(${stem}|${fileStem})$`).test(bare);
+      });
+    }
     case "python":
       return new RegExp(
         `^\\s*(from\\s+[\\w.]*\\b${stem}\\b[\\w.]*\\s+import|import\\s+[\\w.]*\\b${stem}\\b|from\\s+[\\w.]+\\s+import\\s+.*\\b${stem}\\b)`,
@@ -68036,7 +68054,7 @@ function candidateTests(sourcePath, repo) {
       continue;
     }
     const content = repo.read(file2);
-    if (content && importsModule(content, sourcePath, lang)) matches.push(file2);
+    if (content && importsModule(content, sourcePath, lang, file2)) matches.push(file2);
   }
   return matches;
 }
@@ -68066,7 +68084,7 @@ function mentionExcerpt(content, name, context3 = 12, maxLines = 120) {
 // src/verify/runner.ts
 var import_node_child_process3 = require("node:child_process");
 var import_node_fs4 = require("node:fs");
-var import_node_path4 = require("node:path");
+var import_node_path5 = require("node:path");
 var MAX_OUTPUT = 2e4;
 var BROKEN = {
   vitest: /No test files found|Failed to load url|Failed to resolve import|Cannot find module|SyntaxError|Transform failed|Failed to parse source/i,
@@ -68139,7 +68157,7 @@ function pythonCommand() {
 }
 function detectRunners(root) {
   const runners = /* @__PURE__ */ new Map();
-  const pkgPath = (0, import_node_path4.join)(root, "package.json");
+  const pkgPath = (0, import_node_path5.join)(root, "package.json");
   if ((0, import_node_fs4.existsSync)(pkgPath)) {
     let deps = {};
     try {
@@ -68147,7 +68165,7 @@ function detectRunners(root) {
       deps = { ...pkg.dependencies, ...pkg.devDependencies };
     } catch {
     }
-    const bin = (name) => (0, import_node_path4.join)(root, "node_modules", ".bin", name);
+    const bin = (name) => (0, import_node_path5.join)(root, "node_modules", ".bin", name);
     if (deps.vitest && (0, import_node_fs4.existsSync)(bin("vitest"))) {
       runners.set(
         "js",
@@ -68167,7 +68185,7 @@ function detectRunners(root) {
     "tox.ini",
     "conftest.py",
     "requirements.txt"
-  ].some((f) => (0, import_node_fs4.existsSync)((0, import_node_path4.join)(root, f)));
+  ].some((f) => (0, import_node_fs4.existsSync)((0, import_node_path5.join)(root, f)));
   if (looksLikePython) {
     const py = pythonCommand();
     if (py) {
@@ -68211,11 +68229,11 @@ If the bug can't be demonstrated with a test (it needs a real network, database 
 function proofPath(root, suggested, sourcePath, runner, n) {
   const abs = safePath(root, suggested);
   if (!abs) return null;
-  const dir = (0, import_node_path5.relative)((0, import_node_fs5.realpathSync)(root), (0, import_node_path5.dirname)(abs)) || ".";
+  const dir = (0, import_node_path6.relative)((0, import_node_fs5.realpathSync)(root), (0, import_node_path6.dirname)(abs)) || ".";
   if (!safePath(root, dir)) return null;
-  const name = runner.language === "python" ? `test_watchdog_proof_${n}.py` : `watchdog-proof-${n}.test${(0, import_node_path5.extname)(sourcePath) === ".tsx" ? ".tsx" : /\.(ts|mts|cts)$/.test(sourcePath) ? ".ts" : ".js"}`;
+  const name = runner.language === "python" ? `test_watchdog_proof_${n}.py` : `watchdog-proof-${n}.test${(0, import_node_path6.extname)(sourcePath) === ".tsx" ? ".tsx" : /\.(ts|mts|cts)$/.test(sourcePath) ? ".ts" : ".js"}`;
   const path5 = dir === "." ? name : `${dir}/${name}`;
-  return (0, import_node_fs5.existsSync)((0, import_node_path5.join)(root, path5)) ? null : path5;
+  return (0, import_node_fs5.existsSync)((0, import_node_path6.join)(root, path5)) ? null : path5;
 }
 function applySuggestion(content, start, end, replacement) {
   const lines = content.split("\n");
@@ -68272,7 +68290,7 @@ ${brief}`;
         };
         break;
       }
-      const absTest = (0, import_node_path5.join)(options.root, testPath);
+      const absTest = (0, import_node_path6.join)(options.root, testPath);
       try {
         (0, import_node_fs5.writeFileSync)(absTest, output2.code);
         const run2 = await runner.run([testPath], options.testTimeoutMs);
@@ -68282,7 +68300,7 @@ ${brief}`;
 
 ${brief}
 
-Your previous test (${(0, import_node_path5.basename)(testPath)} in ${(0, import_node_path5.dirname)(testPath)}) couldn't run:
+Your previous test (${(0, import_node_path6.basename)(testPath)} in ${(0, import_node_path6.dirname)(testPath)}) couldn't run:
 <test>
 ${output2.code}
 </test>
@@ -68315,7 +68333,7 @@ Fix the test so it runs. Keep testing the same bug.`;
 }
 async function verifyFix(f, testPath, runner, options) {
   if (!f.suggestion.trim() || !f.inline) return null;
-  const abs = (0, import_node_path5.join)(options.root, f.path);
+  const abs = (0, import_node_path6.join)(options.root, f.path);
   const original = (0, import_node_fs5.readFileSync)(abs, "utf8");
   try {
     (0, import_node_fs5.writeFileSync)(abs, applySuggestion(original, f.start_line ?? f.line, f.line, f.suggestion));
@@ -68883,7 +68901,7 @@ function shouldFail(result, failOn) {
 
 // src/verify/mutate.ts
 var import_node_fs6 = require("node:fs");
-var import_node_path6 = require("node:path");
+var import_node_path7 = require("node:path");
 function maskLine(line, lang) {
   const quotes = lang === "python" ? ["'", '"'] : ["'", '"', "`"];
   const comment = lang === "python" ? "#" : "//";
@@ -69010,7 +69028,7 @@ async function runMutations(changed, options) {
     }
     const baseMs = baseline.get(file2.path);
     if (baseMs < 0) continue;
-    const abs = (0, import_node_path6.join)(options.root, file2.path);
+    const abs = (0, import_node_path7.join)(options.root, file2.path);
     const original = (0, import_node_fs6.readFileSync)(abs, "utf8");
     const lines = original.split("\n");
     lines[mutant.line - 1] = mutant.mutated;
