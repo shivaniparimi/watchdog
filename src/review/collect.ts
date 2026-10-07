@@ -15,20 +15,26 @@ export interface ReviewFile {
 }
 
 export interface CollectResult {
+  /** Files whose diff (and, budget allowing, full content) goes straight into the prompt. */
   files: ReviewFile[];
-  skipped: { path: string; reason: string }[];
+  /** Changed files over the size budget: Claude reads them with the get_diff and read_file tools. */
+  deferred: ReviewFile[];
+  /** Changed files that are only listed by name (lockfiles, binaries, generated code). */
+  listed: { path: string; reason: string }[];
 }
 
-/** Files not worth an AI review: lockfiles, build output, generated or vendored code, binaries, docs. */
-const NOT_REVIEWED = [
-  /(^|\/)(node_modules|vendor|dist|build|out|coverage|\.next|__generated__|generated)\//,
-  /(^|\/)(package-lock\.json|yarn\.lock|pnpm-lock\.yaml|poetry\.lock|Cargo\.lock|go\.sum|Gemfile\.lock|composer\.lock)$/,
-  /\.min\.(js|css)$/,
-  /\.(snap|svg|png|jpe?g|gif|ico|pdf|zip|woff2?|ttf|map)$/i,
-  /\.(md|mdx|txt|rst)$/i,
+/** Changed files only listed by name: lockfiles, build output, generated or vendored code, binaries. */
+const LIST_ONLY: [RegExp, string][] = [
+  [
+    /(^|\/)(package-lock\.json|yarn\.lock|pnpm-lock\.yaml|poetry\.lock|Cargo\.lock|go\.sum|Gemfile\.lock|composer\.lock|uv\.lock)$/,
+    "lockfile",
+  ],
+  [/(^|\/)(node_modules|vendor|dist|build|out|coverage|\.next|__generated__|generated)\//, "generated or vendored"],
+  [/\.min\.(js|css)$/, "minified"],
+  [/\.(snap|map)$/, "generated"],
 ];
 
-const MAX_CONTEXT_LINES = 800;
+const MAX_CONTEXT_LINES = 3000;
 
 export function annotateDiff(patch: ParsedPatch): string {
   return patch.entries
@@ -37,8 +43,8 @@ export function annotateDiff(patch: ParsedPatch): string {
 }
 
 /**
- * Pick the changed files to review, staying within a character budget so huge PRs don't
- * blow up cost. Files are taken in the order GitHub lists them.
+ * Gather the whole PR for review. Every changed file is covered: inline in the prompt while the
+ * character budget lasts (diff first, full content when it fits), then through tools.
  */
 export function collectReviewFiles(
   changed: ChangedFile[],
@@ -46,18 +52,23 @@ export function collectReviewFiles(
   options: { ignorePaths: string[]; maxChars: number },
 ): CollectResult {
   const files: ReviewFile[] = [];
-  const skipped: CollectResult["skipped"] = [];
+  const deferred: ReviewFile[] = [];
+  const listed: CollectResult["listed"] = [];
   let budget = options.maxChars;
 
   for (const f of changed) {
-    if (f.status === "removed") continue;
-    if (NOT_REVIEWED.some((re) => re.test(f.path))) continue;
     if (options.ignorePaths.some((glob) => minimatch(f.path, glob, { dot: true }))) continue;
+    if (f.status === "removed") {
+      listed.push({ path: f.path, reason: "deleted" });
+      continue;
+    }
+    const listOnly = LIST_ONLY.find(([re]) => re.test(f.path));
+    if (listOnly) {
+      listed.push({ path: f.path, reason: listOnly[1] });
+      continue;
+    }
     if (!f.patch) {
-      skipped.push({
-        path: f.path,
-        reason: "no diff available (binary or too large)",
-      });
+      listed.push({ path: f.path, reason: "binary or too large for a diff" });
       continue;
     }
 
@@ -65,19 +76,7 @@ export function collectReviewFiles(
     const annotatedDiff = annotateDiff(patch);
     let content = readFile(f.path);
     if (content !== null && content.split("\n").length > MAX_CONTEXT_LINES) content = null;
-
-    let size = annotatedDiff.length + (content?.length ?? 0);
-    if (size > budget && content !== null) {
-      content = null; // Try again with just the diff.
-      size = annotatedDiff.length;
-    }
-    if (size > budget) {
-      skipped.push({ path: f.path, reason: "over the review size budget" });
-      continue;
-    }
-    budget -= size;
-
-    files.push({
+    const file: ReviewFile = {
       path: f.path,
       status: f.status,
       patch,
@@ -85,27 +84,18 @@ export function collectReviewFiles(
       content,
       additions: patch.entries.filter((e) => e.kind === "+").length,
       deletions: patch.entries.filter((e) => e.kind === "-").length,
-    });
-  }
+    };
 
-  return { files, skipped };
-}
-
-/** Group files into batches of roughly `maxChars` each, so each Claude call stays focused. */
-export function batchFiles(files: ReviewFile[], maxChars: number): ReviewFile[][] {
-  const batches: ReviewFile[][] = [];
-  let current: ReviewFile[] = [];
-  let size = 0;
-  for (const f of files) {
-    const s = f.annotatedDiff.length + (f.content?.length ?? 0);
-    if (current.length > 0 && size + s > maxChars) {
-      batches.push(current);
-      current = [];
-      size = 0;
+    if (annotatedDiff.length + (content?.length ?? 0) <= budget) {
+      budget -= annotatedDiff.length + (content?.length ?? 0);
+      files.push(file);
+    } else if (annotatedDiff.length <= budget) {
+      budget -= annotatedDiff.length;
+      files.push({ ...file, content: null }); // Full file still available through read_file.
+    } else {
+      deferred.push(file);
     }
-    current.push(f);
-    size += s;
   }
-  if (current.length > 0) batches.push(current);
-  return batches;
+
+  return { files, deferred, listed };
 }

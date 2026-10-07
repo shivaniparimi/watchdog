@@ -29,8 +29,11 @@ inputs:
     description: "[review] Maximum inline comments per run. The most severe are kept."
     default: "15"
   max-review-chars:
-    description: "[review] Size budget for the diff and file context sent to Claude, in characters."
-    default: "300000"
+    description: "[review] Characters of diff and file content put directly in the prompt. Files beyond it are read through tools."
+    default: "400000"
+  max-iterations:
+    description: "[review] Maximum API round trips while Claude explores the repository."
+    default: "30"
   fail-on-severity:
     description: "[review] Fail the check when a finding at this severity or worse exists (critical, major, minor, nit), or none."
     default: none

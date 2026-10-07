@@ -18,7 +18,7 @@ import { inlineComments, summaryMarkdown } from "./report.js";
 import { collectReviewFiles } from "./review/collect.js";
 import { readLintResults } from "./review/lintResults.js";
 import { reviewComments, reviewSummaryMarkdown, validateFindings } from "./review/report.js";
-import { reviewFiles, summarize } from "./review/review.js";
+import { reviewPr, summarize } from "./review/review.js";
 
 const { values } = parseArgs({
   options: {
@@ -68,7 +68,7 @@ async function testGap(): Promise<void> {
       failOn: "none",
       maxFunctions: Number(values["max-functions"]),
     },
-    values["no-ai"] ? undefined : (symbols) => judge(symbols, { model: values.model }),
+    values["no-ai"] ? undefined : (symbols) => judge(symbols, { model: values.model, repoRoot: root }),
   );
   if (values.json) return console.log(JSON.stringify(result.findings, null, 2));
 
@@ -89,19 +89,23 @@ async function review(): Promise<void> {
       return null;
     }
   };
-  const { files: reviewable, skipped } = collectReviewFiles(files, read, {
-    ignorePaths: [],
-    maxChars: 300_000,
-  });
-  if (reviewable.length === 0) return console.log("No reviewable code changes.");
+  const collected = collectReviewFiles(files, read, { ignorePaths: [], maxChars: 400_000 });
+  const reviewable = [...collected.files, ...collected.deferred];
+  if (reviewable.length === 0) return console.log("No reviewable changes.");
 
-  const pr = { title: `Local changes on ${branch}`, body: "", author: "local" };
+  const commits = git("log", "--reverse", "--format=%B%x00", `${mergeBase}..HEAD`)
+    .split("\0")
+    .map((c) => c.trim())
+    .filter(Boolean);
+  const pr = { title: `Local changes on ${branch}`, body: "", author: "local", commits };
   const options = {
     client: new Anthropic(),
     model: values.model!,
     lintResults: readLintResults(values["lint-results"]),
+    repoRoot: root,
   };
-  const findings = validateFindings(await reviewFiles(pr, reviewable, options), reviewable);
+  const { findings: raw, toolCalls } = await reviewPr(pr, collected, options);
+  const findings = validateFindings(raw, reviewable);
   if (values.json) return console.log(JSON.stringify(findings, null, 2));
 
   const summary = await summarize(pr, reviewable, findings, options);
@@ -112,7 +116,8 @@ async function review(): Promise<void> {
       findings,
       postedKeys: new Set(comments.map((c) => c.key)),
       filesReviewed: reviewable.length,
-      skipped,
+      listed: collected.listed,
+      toolCalls,
       model: values.model!,
     }),
   );

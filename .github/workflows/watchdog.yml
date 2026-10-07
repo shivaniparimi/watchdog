@@ -44,6 +44,10 @@ on:
       max-comments:
         type: number
         default: 15
+      max-iterations:
+        description: Maximum API round trips while Claude explores the repository during review.
+        type: number
+        default: 30
       fail-on-severity:
         description: Fail the AI review job on findings at this severity or worse (critical, major, minor, nit, none).
         type: string
@@ -359,6 +363,7 @@ jobs:
           model: ${{ inputs.model }}
           min-severity: ${{ inputs.min-severity }}
           max-comments: ${{ inputs.max-comments }}
+          max-iterations: ${{ inputs.max-iterations }}
           fail-on-severity: ${{ inputs.fail-on-severity }}
           ignore-paths: ${{ inputs.ignore-paths }}
           lint-results: ${{ runner.temp }}/watchdog-lint

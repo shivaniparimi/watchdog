@@ -28,7 +28,8 @@ export async function runTestGap(ctx: TaskContext): Promise<void> {
   let judgeFn: Judge | undefined;
   if (ctx.anthropic) {
     const client = ctx.anthropic;
-    judgeFn = (symbols) => judge(symbols, { client, model: ctx.model });
+    const repoRoot = process.env.GITHUB_WORKSPACE ?? process.cwd();
+    judgeFn = (symbols) => judge(symbols, { client, model: ctx.model, repoRoot });
   } else {
     core.warning("No anthropic-api-key given; running test-gap rule checks only.");
   }

@@ -92,10 +92,12 @@ export function reviewSummaryMarkdown(args: {
   findings: Finding[];
   postedKeys: Set<string>;
   filesReviewed: number;
-  skipped: { path: string; reason: string }[];
+  /** Changed files only listed by name (lockfiles, binaries, deleted, generated). */
+  listed: { path: string; reason: string }[];
+  toolCalls: number;
   model: string;
 }): string {
-  const { summary, findings, postedKeys, filesReviewed, skipped, model } = args;
+  const { summary, findings, postedKeys, filesReviewed, listed, toolCalls, model } = args;
   const lines = [REVIEW_SUMMARY_MARKER, "## 🐕 Watchdog code review", ""];
 
   if (summary) {
@@ -130,9 +132,12 @@ export function reviewSummaryMarkdown(args: {
   if (summary?.strengths.length) lines.push("", "**What's good**", ...summary.strengths.map((s) => `- ${s}`));
   if (summary?.risks.length) lines.push("", "**Worth a human look**", ...summary.risks.map((s) => `- ${s}`));
 
-  lines.push(
-    "",
-    `<sub>Reviewed ${filesReviewed} file(s) with ${model}.${skipped.length ? ` Skipped: ${skipped.map((s) => `\`${s.path}\` (${s.reason})`).join(", ")}.` : ""}</sub>`,
-  );
+  const notes = [`Reviewed ${filesReviewed} changed file(s) with ${model}`];
+  if (toolCalls > 0) notes.push(`read ${toolCalls} piece(s) of surrounding code`);
+  let footer = `${notes.join(", ")}.`;
+  if (listed.length > 0) {
+    footer += ` Also changed, not reviewed line by line: ${listed.map((l) => `\`${l.path}\` (${l.reason})`).join(", ")}.`;
+  }
+  lines.push("", `<sub>${footer}</sub>`);
   return lines.join("\n");
 }

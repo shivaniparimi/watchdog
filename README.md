@@ -82,20 +82,25 @@ Problems appear as annotations on the PR's changed lines, and the job summary li
 
 ### AI code review
 
-Claude reads each changed file's diff (with real line numbers), the full file for context, and the lint results. It returns structured findings: severity, category, the exact line, an explanation, and optionally a replacement that GitHub shows as a one-click **suggested change**.
+Claude reviews the **whole pull request in the context of the repository**, not just the changed lines:
+
+- **The whole PR goes in:** title, description, every commit message, and every changed file (code, docs and config) with its diff and full new content. Lockfiles, binaries and deleted files are listed by name. Files too large for the prompt budget are still reviewed through a `get_diff` tool.
+- **It reads the code around the change.** Claude has read-only tools for the PR's checkout (`read_file`, `search_code`, `list_files`). It uses them to find every caller of a changed function, read the types and helpers the change depends on, and check related tests and configs. So it can catch a change that breaks code in a file the PR didn't touch.
+- **Structured findings:** each has a severity, category, exact line, explanation, and optionally a replacement that GitHub shows as a one-click **suggested change**.
+
+Then:
 
 - Every finding's line is checked against the diff before posting. Findings on lines outside the diff are listed in the summary, not dropped.
-- All inline comments are posted together as one review. The summary comment (score, verdict, findings table, strengths, risks) is updated in place on each push.
+- All inline comments are posted together as one review. The summary comment (score, verdict, findings table, strengths, risks, how much surrounding code was read) is updated in place on each push.
 - A problem already commented on in an earlier run (same file and category, within 3 lines) isn't posted again.
-- The PR description and code are treated as untrusted data in the prompt.
-- Lockfiles, build output, generated code, docs and binaries are skipped. Large PRs are capped by a size budget, and skipped files are listed in the summary.
+- The PR text, code and docs are treated as untrusted data in the prompt, and the tools can't leave the repository folder or read `.git`.
 
 ### Test gaps
 
 For each function the PR changed, Watchdog finds its test files (by name and by import), then checks whether a test covers the change:
 
 1. **Rule checks** (free): a test changed in this PR mentions the function → covered. No test mentions it → untested. Tests exist but weren't updated → unclear.
-2. **Claude** decides the unclear and untested cases, rates the risk, and suggests a test in the repository's own style.
+2. **Claude** decides the unclear and untested cases. It searches the whole repository for tests the rule check missed (for example, a function tested through its caller), rates the risk, and suggests a test in the repository's own style.
 
 Untested functions get an inline comment, and a summary table lists every changed function.
 
@@ -131,7 +136,8 @@ scripts/lint.sh                  Runs each language's linters and formatters (ch
 scripts/security.sh              npm audit, pip-audit, Bandit
 scripts/install-hook.sh          Installs the pre-commit hook
 configs/                         Default linter configs and the annotation problem matcher
-src/review/                      AI code review: collect files, call Claude, validate findings, report
+src/agent/                       Repository tools (read, search, list, diff) and the exploration loop
+src/review/                      AI code review: collect the PR, run Claude, validate findings, report
 src/*.ts                         Test-gap finder: diff parsing, function detection, test matching, Claude judge
 src/tasks/, src/index.ts         Action entry point
 src/local.ts                     Local CLI
@@ -147,7 +153,7 @@ npm run build      # bundle to dist/index.cjs; commit dist/ so the Action can ru
 
 ## Known limits
 
-- The AI checks need an Anthropic API key and cost money per PR (larger PRs cost more). `max-comments`, `ignore-paths` and the size budget keep this bounded.
+- The AI checks need an Anthropic API key and cost money per PR. Larger PRs, and more exploration, cost more; `max-iterations`, `ignore-paths` and the prompt budget keep this bounded.
 - Function detection for the test-gap finder uses patterns, not a full parser, so unusual syntax can be missed.
 - clang-tidy is advisory unless the repo provides `compile_commands.json`, because it can't know the real compiler flags otherwise.
 - CodeQL results upload only for same-repo PRs. Private repositories need GitHub Advanced Security for CodeQL and dependency review.

@@ -110,3 +110,34 @@ describe("judge", () => {
     expect((await judge([sym], { client })).size).toBe(0);
   });
 });
+
+describe("judge with repository access", () => {
+  it("lets Claude search for tests the rule check missed, then maps its verdicts", async () => {
+    const { fakeClient, gitRepo, message, text, toolUse } = await import("./helpers.js");
+    const root = gitRepo({ "test/checkout.test.ts": "it('discounts', () => checkout('TENOFF'));\n" });
+    const { client, requests } = fakeClient([
+      message([toolUse("a", "search_code", { pattern: "TENOFF" })], "tool_use"),
+      message(
+        [
+          toolUse("b", "submit_verdicts", {
+            verdicts: [
+              {
+                id: sym.id,
+                covered: true,
+                risk: "low",
+                reason: "test/checkout.test.ts covers it.",
+                suggested_test: "",
+              },
+            ],
+          }),
+        ],
+        "tool_use",
+      ),
+      message([text("Done.")]),
+    ]);
+    const verdicts = await judge([sym], { client, repoRoot: root });
+    expect(verdicts.get(sym.id)).toMatchObject({ covered: true, risk: "none", source: "ai" });
+    expect(requests[0].system).toContain("use search_code to look for tests");
+    expect(requests[1].messages.at(-1).content[0].content).toContain("test/checkout.test.ts:1:");
+  });
+});

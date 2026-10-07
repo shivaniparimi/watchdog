@@ -9,7 +9,7 @@ import {
   reviewSummaryMarkdown,
   validateFindings,
 } from "../review/report.js";
-import { reviewFiles, SEVERITIES, summarize, type Severity } from "../review/review.js";
+import { reviewPr, SEVERITIES, summarize, type Severity } from "../review/review.js";
 import { fetchHeadContents, type TaskContext } from "./context.js";
 
 function severityInput(name: string, fallback: Severity | "none"): Severity | "none" {
@@ -31,27 +31,38 @@ export async function runReview(ctx: TaskContext): Promise<void> {
   const minSeverity = severityInput("min-severity", "minor");
   const failOn = severityInput("fail-on-severity", "none");
   const maxComments = Number(core.getInput("max-comments") || 15);
-  const maxChars = Number(core.getInput("max-review-chars") || 300_000);
+  const maxChars = Number(core.getInput("max-review-chars") || 400_000);
+  const maxIterations = Number(core.getInput("max-iterations") || 30);
 
   const paths = ctx.files.filter((f) => f.status !== "removed").map((f) => f.path);
   const contents = await fetchHeadContents(ctx, paths);
-  const { files, skipped } = collectReviewFiles(ctx.files, (p) => contents.get(p) ?? null, {
+  const collected = collectReviewFiles(ctx.files, (p) => contents.get(p) ?? null, {
     ignorePaths: ctx.ignorePaths,
     maxChars,
   });
-  if (files.length === 0) {
-    core.info("No reviewable code changes.");
+  const reviewed = [...collected.files, ...collected.deferred];
+  if (reviewed.length === 0) {
+    core.info("No reviewable changes.");
     return;
   }
 
-  const pr = { title: ctx.title, body: ctx.body, author: ctx.author };
+  const commits = await ctx.octokit.paginate(ctx.octokit.rest.pulls.listCommits, {
+    owner: ctx.pr.owner,
+    repo: ctx.pr.repo,
+    pull_number: ctx.pr.pullNumber,
+    per_page: 100,
+  });
+  const pr = { title: ctx.title, body: ctx.body, author: ctx.author, commits: commits.map((c) => c.commit.message) };
   const options = {
     client: ctx.anthropic,
     model: ctx.model,
     lintResults: readLintResults(core.getInput("lint-results") || undefined),
+    repoRoot: process.env.GITHUB_WORKSPACE ?? process.cwd(),
+    maxIterations,
   };
-  const findings = validateFindings(await reviewFiles(pr, files, options), files);
-  const summary = await summarize(pr, files, findings, options);
+  const { findings: raw, toolCalls } = await reviewPr(pr, collected, options);
+  const findings = validateFindings(raw, reviewed);
+  const summary = await summarize(pr, reviewed, findings, options);
 
   const comments = minSeverity === "none" ? [] : reviewComments(findings, minSeverity, maxComments);
   const postedKeys = await postInlineComments(ctx.octokit, ctx.pr, comments, {
@@ -62,8 +73,9 @@ export async function runReview(ctx: TaskContext): Promise<void> {
     summary,
     findings,
     postedKeys,
-    filesReviewed: files.length,
-    skipped,
+    filesReviewed: reviewed.length,
+    listed: collected.listed,
+    toolCalls,
     model: ctx.model,
   });
   await upsertSummary(ctx.octokit, ctx.pr, REVIEW_SUMMARY_MARKER, markdown);
@@ -71,7 +83,9 @@ export async function runReview(ctx: TaskContext): Promise<void> {
 
   core.setOutput("score", summary?.score ?? "");
   core.setOutput("findings", findings.length);
-  core.info(`Reviewed ${files.length} file(s): ${findings.length} finding(s), score ${summary?.score ?? "n/a"}.`);
+  core.info(
+    `Reviewed ${reviewed.length} file(s) with ${toolCalls} tool call(s): ${findings.length} finding(s), score ${summary?.score ?? "n/a"}.`,
+  );
 
   if (failOn !== "none") {
     const threshold = SEVERITIES.indexOf(failOn);
