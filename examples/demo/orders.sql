@@ -1,1 +1,5 @@
-select id,total from orders where status='paid'
+SELECT
+  id,
+  total
+FROM orders
+WHERE status = 'paid'
