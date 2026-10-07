@@ -107,6 +107,9 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+    outputs:
+      # The PR head after auto-fix: the review jobs comment on this commit so comments don't go stale.
+      head-sha: ${{ steps.fix.outputs.head-sha }}
     env:
       SAME_REPO: ${{ github.event.pull_request.head.repo.full_name == github.repository }}
     steps:
@@ -140,7 +143,12 @@ jobs:
           node-version: 22
       - name: Install Watchdog's default JS linters
         if: needs.detect.outputs.has-js == 'true'
-        run: npm ci --prefix .watchdog --ignore-scripts --no-audit --no-fund
+        run: |
+          # setup-node registers its own ESLint/tsc annotation matchers; Watchdog has its own.
+          echo "::remove-matcher owner=eslint-stylish::"
+          echo "::remove-matcher owner=eslint-compact::"
+          echo "::remove-matcher owner=tsc::"
+          npm ci --prefix .watchdog --ignore-scripts --no-audit --no-fund
       - name: Install the repository's JS dependencies
         if: needs.detect.outputs.has-js == 'true' && hashFiles('package-lock.json') != ''
         run: npm ci --ignore-scripts --no-audit --no-fund
@@ -182,6 +190,7 @@ jobs:
           fi
 
       - name: Auto-fix
+        id: fix
         if: inputs.auto-fix && env.SAME_REPO == 'true'
         env:
           HEAD_REF: ${{ github.event.pull_request.head.ref }}
@@ -198,6 +207,7 @@ jobs:
               commit -q -m "style: auto-fix lint and formatting (Watchdog)"
           if git push origin "HEAD:refs/heads/$HEAD_REF"; then
             echo "::notice::Watchdog pushed formatting and lint fixes to $HEAD_REF."
+            echo "head-sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
           else
             echo "::warning::Couldn't push auto-fixes (the branch may have moved). Run the formatters locally."
           fi
@@ -209,6 +219,7 @@ jobs:
           status=0
           for lang in js python java cpp sql; do .watchdog/scripts/lint.sh check "$lang" || status=1; done
           echo "::remove-matcher owner=watchdog-lint::"
+          echo "::remove-matcher owner=watchdog-checkstyle::"
           echo "::remove-matcher owner=watchdog-tsc::"
           echo "failed=$status" >> "$GITHUB_OUTPUT"
 
@@ -327,7 +338,21 @@ jobs:
       contents: read
       pull-requests: write
     steps:
-      - uses: actions/dependency-review-action@v5
+      - name: Check the dependency graph is enabled
+        id: graph
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if out=$(gh api "repos/$GITHUB_REPOSITORY/dependency-graph/compare/$BASE_SHA...$HEAD_SHA" 2>&1); then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          elif echo "$out" | grep -qiE "dependency graph|not supported|not enabled|advanced security"; then
+            echo "::warning::Dependency review skipped: turn on the dependency graph at https://github.com/$GITHUB_REPOSITORY/settings/security_analysis"
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=true" >> "$GITHUB_OUTPUT" # Unexpected error: let the action report it.
+          fi
+      - if: steps.graph.outputs.enabled == 'true'
+        uses: actions/dependency-review-action@v5
         with:
           fail-on-severity: high
           comment-summary-in-pr: on-failure
@@ -343,7 +368,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: ${{ env.HEAD_SHA }}
+          ref: ${{ needs.lint.outputs.head-sha || env.HEAD_SHA }}
           persist-credentials: false
       - uses: actions/checkout@v7
         with:
@@ -359,6 +384,7 @@ jobs:
       - uses: ./.watchdog
         with:
           task: review
+          head-sha: ${{ needs.lint.outputs.head-sha || env.HEAD_SHA }}
           anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
           model: ${{ inputs.model }}
           min-severity: ${{ inputs.min-severity }}
@@ -370,8 +396,8 @@ jobs:
 
   test-gap:
     name: Test gaps
-    needs: detect
-    if: inputs.test-gap && needs.detect.outputs.has-any == 'true'
+    needs: [detect, lint]
+    if: always() && inputs.test-gap && needs.detect.outputs.has-any == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -379,7 +405,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: ${{ env.HEAD_SHA }}
+          ref: ${{ needs.lint.outputs.head-sha || env.HEAD_SHA }}
           persist-credentials: false
       - uses: actions/checkout@v7
         with:
@@ -390,6 +416,7 @@ jobs:
       - uses: ./.watchdog
         with:
           task: test-gap
+          head-sha: ${{ needs.lint.outputs.head-sha || env.HEAD_SHA }}
           anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
           model: ${{ inputs.model }}
           fail-on: ${{ inputs.test-gap-fail-on }}
