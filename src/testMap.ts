@@ -42,13 +42,38 @@ function escapeRegex(s: string): string {
 }
 
 /** Does the test file import the source module? */
+/** For each character, whether it's inside a string or template literal, so imports in sample text are ignored. */
+function stringMask(content: string): boolean[] {
+  const inside: boolean[] = new Array(content.length).fill(false);
+  let quote: string | null = null;
+  for (let i = 0; i < content.length; i++) {
+    const ch = content[i]!;
+    if (quote) {
+      inside[i] = true;
+      if (ch === "\\") {
+        inside[i + 1] = true;
+        i++;
+      } else if (ch === quote || (ch === "\n" && quote !== "`")) {
+        quote = null;
+      }
+    } else if (ch === "/" && content[i + 1] === "/") {
+      const end = content.indexOf("\n", i);
+      i = end === -1 ? content.length : end; // Skip line comments.
+    } else if (ch === "'" || ch === '"' || ch === "`") {
+      quote = ch;
+    }
+  }
+  return inside;
+}
+
 /** Module specifiers a JS/TS file imports: `from "x"`, `require("x")`, `import("x")`, `import "x"`. */
 function jsSpecifiers(content: string): string[] {
-  return [
-    ...content.matchAll(
-      /^\s*(?:import|export)\b[^"'`;]*?["']([^"']+)["']|\b(?:require|import)\(\s*["']([^"']+)["']\s*\)/gm,
-    ),
-  ].map((m) => (m[1] ?? m[2])!);
+  const inString = stringMask(content);
+  const pattern =
+    /^[ \t]*(?:import|export)\b[^"'`;]*?["']([^"']+)["']|\b(?:require|import)\(\s*["']([^"']+)["']\s*\)/gm;
+  return [...content.matchAll(pattern)]
+    .filter((m) => !inString[m.index! + m[0].search(/\S/)])
+    .map((m) => (m[1] ?? m[2])!);
 }
 
 /** Does the test file import the source module? */

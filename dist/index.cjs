@@ -67998,12 +67998,32 @@ function testStem(path5) {
 function escapeRegex2(s) {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
+function stringMask(content) {
+  const inside = new Array(content.length).fill(false);
+  let quote = null;
+  for (let i = 0; i < content.length; i++) {
+    const ch = content[i];
+    if (quote) {
+      inside[i] = true;
+      if (ch === "\\") {
+        inside[i + 1] = true;
+        i++;
+      } else if (ch === quote || ch === "\n" && quote !== "`") {
+        quote = null;
+      }
+    } else if (ch === "/" && content[i + 1] === "/") {
+      const end = content.indexOf("\n", i);
+      i = end === -1 ? content.length : end;
+    } else if (ch === "'" || ch === '"' || ch === "`") {
+      quote = ch;
+    }
+  }
+  return inside;
+}
 function jsSpecifiers(content) {
-  return [
-    ...content.matchAll(
-      /^\s*(?:import|export)\b[^"'`;]*?["']([^"']+)["']|\b(?:require|import)\(\s*["']([^"']+)["']\s*\)/gm
-    )
-  ].map((m) => m[1] ?? m[2]);
+  const inString = stringMask(content);
+  const pattern = /^[ \t]*(?:import|export)\b[^"'`;]*?["']([^"']+)["']|\b(?:require|import)\(\s*["']([^"']+)["']\s*\)/gm;
+  return [...content.matchAll(pattern)].filter((m) => !inString[m.index + m[0].search(/\S/)]).map((m) => m[1] ?? m[2]);
 }
 function importsModule(testContent, sourcePath, lang, testPath) {
   const stem = escapeRegex2(sourceStem(sourcePath));

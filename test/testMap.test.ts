@@ -59,6 +59,8 @@ describe("candidateTests import resolution", () => {
       "examples/demo/flow.test.ts": 'import { price } from "./pricing.js";',
       "test/alias.test.ts": 'import { price } from "@/demo/pricing";',
       "test/dynamic.test.ts": 'const m = await import("../examples/demo/pricing");',
+      "test/fixture.test.ts":
+        'const sample = \'await import("../examples/demo/pricing")\';\nconst t = `\nimport { p } from "../examples/demo/pricing";\n`;',
     });
     expect(candidateTests("examples/demo/pricing.ts", repo).sort()).toEqual([
       "examples/demo/flow.test.ts",
