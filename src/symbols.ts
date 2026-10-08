@@ -1,4 +1,47 @@
+import { spawnSync } from "node:child_process";
 import type { ChangedSymbol, FunctionDef, Language, ParsedPatch } from "./types.js";
+
+/**
+ * Python's own parser gives exact function ranges (decorators, nested functions, multi-line strings
+ * that contain "def"). Reads source on stdin, prints [{name, start, end}] as JSON; exits 1 on a syntax error.
+ */
+const PY_FUNCTIONS = `
+import ast, json, sys
+tree = ast.parse(sys.stdin.read())
+print(json.dumps([
+    {"name": n.name, "start": n.lineno, "end": n.end_lineno}
+    for n in ast.walk(tree)
+    if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))
+]))
+`;
+
+let pythonBinary: string | null | undefined;
+
+function findPython(): string | null {
+  if (pythonBinary !== undefined) return pythonBinary;
+  pythonBinary = null;
+  for (const py of ["python3", "python"]) {
+    if (spawnSync(py, ["-c", "import ast"], { timeout: 10_000 }).status === 0) {
+      pythonBinary = py;
+      break;
+    }
+  }
+  return pythonBinary;
+}
+
+/** Exact Python function ranges from the `ast` module, or null to fall back to pattern matching. */
+export function pythonFunctions(content: string): FunctionDef[] | null {
+  const py = findPython();
+  if (!py) return null;
+  const r = spawnSync(py, ["-c", PY_FUNCTIONS], { input: content, encoding: "utf8", timeout: 20_000 });
+  if (r.status !== 0) return null;
+  try {
+    const defs = JSON.parse(r.stdout) as FunctionDef[];
+    return defs.sort((a, b) => a.start - b.start);
+  } catch {
+    return null;
+  }
+}
 
 const CONTROL_KEYWORDS = new Set([
   "if",
@@ -103,6 +146,10 @@ function findPythonEnd(lines: string[], startIdx: number, indent: number): numbe
 
 /** Find every function/method definition in a file, with 1-based inclusive line ranges. */
 export function findFunctions(content: string, lang: Language): FunctionDef[] {
+  if (lang === "python") {
+    const exact = pythonFunctions(content);
+    if (exact) return exact;
+  }
   const lines = content.split("\n");
   const defs: FunctionDef[] = [];
 

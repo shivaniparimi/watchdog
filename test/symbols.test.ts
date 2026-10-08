@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { parsePatch } from "../src/diff.js";
-import { changedSymbols, findFunctions, isTrivialLine } from "../src/symbols.js";
+import { changedSymbols, findFunctions, isTrivialLine, pythonFunctions } from "../src/symbols.js";
 
 const TS = `import { tax } from "./tax";
 
@@ -159,5 +159,37 @@ describe("changedSymbols", () => {
       "@@ -1,6 +1,3 @@\n-function gone() {\n-  return 2;\n-}\n function keep() {\n   return 1;\n }",
     );
     expect(changedSymbols("a.ts", "ts", content, patch)).toEqual([]);
+  });
+});
+
+describe("pythonFunctions (ast)", () => {
+  it("gets exact ranges where pattern matching would be fooled", () => {
+    const py = [
+      "@cache", // 1
+      "def total(items):", // 2
+      '    """', // 3
+      "    def not_a_function(): pass", // 4  (inside a docstring)
+      '    """', // 5
+      "    return sum(items)", // 6
+      "", // 7
+      "class Cart:", // 8
+      "    async def pay(self):", // 9
+      "        def inner():", // 10
+      "            return 1", // 11
+      "        return inner()", // 12
+    ].join("\n");
+    const defs = pythonFunctions(py);
+    if (defs === null) return; // No Python on this machine: the regex fallback is tested above.
+    expect(defs.map((d) => [d.name, d.start, d.end])).toEqual([
+      ["total", 2, 6],
+      ["pay", 9, 12],
+      ["inner", 10, 11],
+    ]);
+    expect(findFunctions(py, "python")).toEqual(defs);
+  });
+
+  it("falls back to pattern matching when the file doesn't parse", () => {
+    expect(pythonFunctions("def broken(:\n")).toBeNull();
+    expect(findFunctions("def ok():\n    return 1\n\nx = (", "python").map((d) => d.name)).toEqual(["ok"]);
   });
 });
