@@ -65517,45 +65517,60 @@ async function upsertSummary(octokit, pr, marker, body) {
   }
 }
 
-// src/tasks/context.ts
-function listInput(name) {
-  return getInput(name).split(/[\n,]/).map((s) => s.trim()).filter(Boolean);
-}
-async function loadContext() {
-  const pull = context2.payload.pull_request;
-  if (!pull) return null;
-  const octokit = getOctokit(getInput("github-token", { required: true }));
-  const pr = {
-    owner: context2.repo.owner,
-    repo: context2.repo.repo,
-    pullNumber: pull.number,
-    headSha: getInput("head-sha") || pull.head.sha
-  };
-  const geminiApiKey = getInput("gemini-api-key");
-  const anthropicApiKey = getInput("anthropic-api-key");
-  for (const key2 of [geminiApiKey, anthropicApiKey]) if (key2) setSecret(key2);
-  const provider = getInput("ai-provider") || "auto";
-  if (!["auto", "gemini", "anthropic"].includes(provider)) {
-    throw new Error(`ai-provider must be auto, gemini or anthropic (got "${provider}")`);
+// src/review/lintResults.ts
+var import_node_fs = require("node:fs");
+var import_node_path = require("node:path");
+var MAX_LOG_CHARS = 3e3;
+var MAX_TOTAL_CHARS = 15e3;
+function readLintResults(dir) {
+  if (!dir) return void 0;
+  const summaryPath = (0, import_node_path.join)(dir, "summary.tsv");
+  if (!(0, import_node_fs.existsSync)(summaryPath)) return void 0;
+  const rows = (0, import_node_fs.readFileSync)(summaryPath, "utf8").split("\n").filter(Boolean).map((line) => line.split("	"));
+  const out = rows.map(([lang, tool2, status, note]) => `${lang}/${tool2}: ${status}${note ? ` (${note})` : ""}`);
+  let total = out.join("\n").length;
+  for (const [, tool2, status] of rows) {
+    if (status !== "fail" && status !== "warn") continue;
+    const logPath = (0, import_node_path.join)(dir, `${tool2}.log`);
+    if (!(0, import_node_fs.existsSync)(logPath)) continue;
+    let log = (0, import_node_fs.readFileSync)(logPath, "utf8").trim();
+    if (log.length > MAX_LOG_CHARS) log = `${log.slice(0, MAX_LOG_CHARS)}
+\u2026(truncated)`;
+    if (total + log.length > MAX_TOTAL_CHARS) break;
+    out.push("", `--- ${tool2} output ---`, log);
+    total += log.length;
   }
+  return out.join("\n");
+}
+
+// src/repo.ts
+var import_node_child_process = require("node:child_process");
+var import_node_fs2 = require("node:fs");
+var import_node_path2 = require("node:path");
+function fsRepo(root, overrides = /* @__PURE__ */ new Map()) {
+  let files;
+  const cache = new Map(overrides);
   return {
-    octokit,
-    pr,
-    title: pull.title ?? "",
-    body: pull.body ?? "",
-    author: pull.user?.login ?? "",
-    files: await listPrFiles(octokit, pr),
-    ignorePaths: listInput("ignore-paths"),
-    ai: createProvider({ provider, geminiApiKey, anthropicApiKey, model: getInput("model") })
+    listFiles() {
+      files ??= (0, import_node_child_process.execFileSync)("git", ["ls-files", "--cached", "--others", "--exclude-standard"], {
+        cwd: root,
+        encoding: "utf8",
+        maxBuffer: 64 * 1024 * 1024
+      }).split("\n").filter(Boolean);
+      return files;
+    },
+    read(path5) {
+      if (!cache.has(path5)) {
+        let content = null;
+        try {
+          content = (0, import_node_fs2.readFileSync)((0, import_node_path2.join)(root, path5), "utf8");
+        } catch {
+        }
+        cache.set(path5, content);
+      }
+      return cache.get(path5) ?? null;
+    }
   };
-}
-async function fetchHeadContents(ctx, paths) {
-  const contents = /* @__PURE__ */ new Map();
-  for (const path5 of paths) {
-    const content = await fetchFileAtHead(ctx.octokit, ctx.pr, path5);
-    if (content !== null) contents.set(path5, content);
-  }
-  return contents;
 }
 
 // node_modules/balanced-match/dist/esm/index.js
@@ -67522,36 +67537,10 @@ function collectReviewFiles(changed, readFile2, options) {
   return { files, deferred, listed };
 }
 
-// src/review/lintResults.ts
-var import_node_fs = require("node:fs");
-var import_node_path = require("node:path");
-var MAX_LOG_CHARS = 3e3;
-var MAX_TOTAL_CHARS = 15e3;
-function readLintResults(dir) {
-  if (!dir) return void 0;
-  const summaryPath = (0, import_node_path.join)(dir, "summary.tsv");
-  if (!(0, import_node_fs.existsSync)(summaryPath)) return void 0;
-  const rows = (0, import_node_fs.readFileSync)(summaryPath, "utf8").split("\n").filter(Boolean).map((line) => line.split("	"));
-  const out = rows.map(([lang, tool2, status, note]) => `${lang}/${tool2}: ${status}${note ? ` (${note})` : ""}`);
-  let total = out.join("\n").length;
-  for (const [, tool2, status] of rows) {
-    if (status !== "fail" && status !== "warn") continue;
-    const logPath = (0, import_node_path.join)(dir, `${tool2}.log`);
-    if (!(0, import_node_fs.existsSync)(logPath)) continue;
-    let log = (0, import_node_fs.readFileSync)(logPath, "utf8").trim();
-    if (log.length > MAX_LOG_CHARS) log = `${log.slice(0, MAX_LOG_CHARS)}
-\u2026(truncated)`;
-    if (total + log.length > MAX_TOTAL_CHARS) break;
-    out.push("", `--- ${tool2} output ---`, log);
-    total += log.length;
-  }
-  return out.join("\n");
-}
-
 // src/agent/repoTools.ts
-var import_node_child_process = require("node:child_process");
-var import_node_fs2 = require("node:fs");
-var import_node_path2 = require("node:path");
+var import_node_child_process2 = require("node:child_process");
+var import_node_fs3 = require("node:fs");
+var import_node_path3 = require("node:path");
 var MAX_READ_LINES = 400;
 var MAX_OUTPUT_CHARS = 4e4;
 var MAX_SEARCH_MATCHES = 100;
@@ -67562,20 +67551,20 @@ function clip(text) {
 \u2026(output truncated)` : text;
 }
 function safePath(root, path5) {
-  if ((0, import_node_path2.isAbsolute)(path5) || path5.includes("\0")) return null;
-  const realRoot = (0, import_node_fs2.realpathSync)(root);
-  const target = (0, import_node_path2.resolve)(realRoot, path5);
-  const rel = (0, import_node_path2.relative)(realRoot, target);
-  if (rel.startsWith("..") || (0, import_node_path2.isAbsolute)(rel) || HIDDEN.test(rel)) return null;
-  if (!(0, import_node_fs2.existsSync)(target)) return target;
-  const real = (0, import_node_fs2.realpathSync)(target);
-  const realRel = (0, import_node_path2.relative)(realRoot, real);
-  if (realRel.startsWith("..") || (0, import_node_path2.isAbsolute)(realRel) || HIDDEN.test(realRel)) return null;
+  if ((0, import_node_path3.isAbsolute)(path5) || path5.includes("\0")) return null;
+  const realRoot = (0, import_node_fs3.realpathSync)(root);
+  const target = (0, import_node_path3.resolve)(realRoot, path5);
+  const rel = (0, import_node_path3.relative)(realRoot, target);
+  if (rel.startsWith("..") || (0, import_node_path3.isAbsolute)(rel) || HIDDEN.test(rel)) return null;
+  if (!(0, import_node_fs3.existsSync)(target)) return target;
+  const real = (0, import_node_fs3.realpathSync)(target);
+  const realRel = (0, import_node_path3.relative)(realRoot, real);
+  if (realRel.startsWith("..") || (0, import_node_path3.isAbsolute)(realRel) || HIDDEN.test(realRel)) return null;
   return real;
 }
 function git(root, args) {
   try {
-    return (0, import_node_child_process.execFileSync)("git", args, { cwd: root, encoding: "utf8", maxBuffer: 32 * 1024 * 1024, timeout: 2e4 });
+    return (0, import_node_child_process2.execFileSync)("git", args, { cwd: root, encoding: "utf8", maxBuffer: 32 * 1024 * 1024, timeout: 2e4 });
   } catch (err) {
     const e = err;
     if (e.status === 1) return e.stdout ?? "";
@@ -67597,9 +67586,9 @@ function repoTools(root, diffs = /* @__PURE__ */ new Map()) {
     run: async ({ path: path5, start_line, end_line }) => {
       const target = safePath(root, path5);
       if (!target) return `Error: ${path5} is outside the repository.`;
-      if (!(0, import_node_fs2.existsSync)(target)) return `Error: ${path5} does not exist.`;
-      if ((0, import_node_fs2.statSync)(target).isDirectory()) return `Error: ${path5} is a directory; use list_files.`;
-      const lines = (0, import_node_fs2.readFileSync)(target, "utf8").split("\n");
+      if (!(0, import_node_fs3.existsSync)(target)) return `Error: ${path5} does not exist.`;
+      if ((0, import_node_fs3.statSync)(target).isDirectory()) return `Error: ${path5} is a directory; use list_files.`;
+      const lines = (0, import_node_fs3.readFileSync)(target, "utf8").split("\n");
       const start = Math.max(1, Math.round(start_line ?? 1));
       const end = Math.min(
         lines.length,
@@ -67960,36 +67949,6 @@ function reviewSummaryMarkdown(args) {
   }
   lines.push("", `<sub>${footer}</sub>`);
   return lines.join("\n");
-}
-
-// src/repo.ts
-var import_node_child_process2 = require("node:child_process");
-var import_node_fs3 = require("node:fs");
-var import_node_path3 = require("node:path");
-function fsRepo(root, overrides = /* @__PURE__ */ new Map()) {
-  let files;
-  const cache = new Map(overrides);
-  return {
-    listFiles() {
-      files ??= (0, import_node_child_process2.execFileSync)("git", ["ls-files", "--cached", "--others", "--exclude-standard"], {
-        cwd: root,
-        encoding: "utf8",
-        maxBuffer: 64 * 1024 * 1024
-      }).split("\n").filter(Boolean);
-      return files;
-    },
-    read(path5) {
-      if (!cache.has(path5)) {
-        let content = null;
-        try {
-          content = (0, import_node_fs3.readFileSync)((0, import_node_path3.join)(root, path5), "utf8");
-        } catch {
-        }
-        cache.set(path5, content);
-      }
-      return cache.get(path5) ?? null;
-    }
-  };
 }
 
 // src/verify/prove.ts
@@ -68440,49 +68399,53 @@ async function verifyFix(f, testPath, runner, options) {
   }
 }
 
+// src/tasks/context.ts
+async function fetchHeadContents(ctx, paths) {
+  const contents = /* @__PURE__ */ new Map();
+  for (const path5 of paths) {
+    const content = await fetchFileAtHead(ctx.octokit, ctx.pr, path5);
+    if (content !== null) contents.set(path5, content);
+  }
+  return contents;
+}
+
 // src/tasks/review.ts
-function severityInput(name, fallback) {
-  const value = getInput(name) || fallback;
+function parseSeverity(name, value) {
   if (value !== "none" && !SEVERITIES.includes(value)) {
     throw new Error(`${name} must be one of none, ${SEVERITIES.join(", ")} (got "${value}")`);
   }
   return value;
 }
-async function runReview(ctx) {
+async function runReview(ctx, options) {
   try {
-    await review(ctx);
+    return await review(ctx, options);
   } catch (err) {
     if (!(err instanceof AiQuotaError)) throw err;
     const note = `\u{1F415} Watchdog AI review skipped: ${err.message}`;
-    warning(note);
+    ctx.log.warning(note);
     await upsertSummary(ctx.octokit, ctx.pr, REVIEW_SUMMARY_MARKER, `${REVIEW_SUMMARY_MARKER}
 ${note}`);
-    await summary.addRaw(note).write();
+    return { summary: note, outputs: {} };
   }
 }
-async function review(ctx) {
+async function review(ctx, options) {
   if (!ctx.ai) {
     const note = "\u{1F415} Watchdog AI review skipped: add a free `GEMINI_API_KEY` secret (or an `ANTHROPIC_API_KEY`) to enable it.";
-    warning(note);
-    await summary.addRaw(note).write();
-    return;
+    ctx.log.warning(note);
+    return { summary: note, outputs: {} };
   }
-  const minSeverity = severityInput("min-severity", "minor");
-  const failOn = severityInput("fail-on-severity", "none");
-  const maxComments = Number(getInput("max-comments") || 15);
   const ai = ctx.ai;
-  const maxChars = Number(getInput("max-review-chars")) || ai.reviewChars;
-  const maxIterations = Number(getInput("max-iterations")) || ai.maxIterations;
   const paths = ctx.files.filter((f) => f.status !== "removed").map((f) => f.path);
   const contents = await fetchHeadContents(ctx, paths);
   const collected = collectReviewFiles(ctx.files, (p) => contents.get(p) ?? null, {
     ignorePaths: ctx.ignorePaths,
-    maxChars
+    // Defaults depend on the provider: free tiers get smaller prompts and fewer round trips.
+    maxChars: options.maxChars || ai.reviewChars
   });
   const reviewed = [...collected.files, ...collected.deferred];
   if (reviewed.length === 0) {
-    info("No reviewable changes.");
-    return;
+    ctx.log.info("No reviewable changes.");
+    return { summary: "No reviewable changes.", outputs: {} };
   }
   const commits = await ctx.octokit.paginate(ctx.octokit.rest.pulls.listCommits, {
     owner: ctx.pr.owner,
@@ -68491,45 +68454,45 @@ async function review(ctx) {
     per_page: 100
   });
   const pr = { title: ctx.title, body: ctx.body, author: ctx.author, commits: commits.map((c) => c.commit.message) };
-  const options = {
+  const reviewOptions = {
     provider: ai,
-    lintResults: readLintResults(getInput("lint-results") || void 0),
-    repoRoot: process.env.GITHUB_WORKSPACE ?? process.cwd(),
-    maxIterations
+    lintResults: options.lintResults,
+    repoRoot: ctx.repoRoot,
+    maxIterations: options.maxIterations || ai.maxIterations
   };
-  const { findings: raw, toolCalls } = await reviewPr(pr, collected, options);
+  const { findings: raw, toolCalls } = await reviewPr(pr, collected, reviewOptions);
   const findings = validateFindings(raw, reviewed);
-  if (getBooleanInput("verify-findings")) {
-    const runners = detectRunners(options.repoRoot);
+  if (options.verifyFindings) {
+    const runners = detectRunners(ctx.repoRoot);
     if (runners.size === 0) {
-      info(
+      ctx.log.info(
         "Skipping proof tests: no Vitest, Jest or pytest install found (install the project's dependencies first)."
       );
     } else {
       const proofs = await proveFindings(findings, {
         provider: ai,
-        root: options.repoRoot,
-        repo: fsRepo(options.repoRoot),
+        root: ctx.repoRoot,
+        repo: fsRepo(ctx.repoRoot),
         runners,
         files: reviewed,
-        maxProofs: Number(getInput("max-proofs")) || ai.maxProofs,
-        testTimeoutMs: Number(getInput("test-timeout") || 120) * 1e3
+        maxProofs: options.maxProofs || ai.maxProofs,
+        testTimeoutMs: options.testTimeoutMs
       });
       for (const [i, proof] of proofs) findings[i].proof = proof;
       const counts = [...proofs.values()].reduce(
         (acc, p) => (acc[p.status] = (acc[p.status] ?? 0) + 1, acc),
         {}
       );
-      info(`Proof tests: ${JSON.stringify(counts)}`);
+      ctx.log.info(`Proof tests: ${JSON.stringify(counts)}`);
     }
   }
   const summary2 = await summarize(
     pr,
     reviewed,
     findings.filter((f) => f.proof?.status !== "refuted"),
-    options
+    reviewOptions
   );
-  const comments = minSeverity === "none" ? [] : reviewComments(findings, minSeverity, maxComments);
+  const comments = options.minSeverity === "none" ? [] : reviewComments(findings, options.minSeverity, options.maxComments);
   const postedKeys = await postInlineComments(ctx.octokit, ctx.pr, comments, {
     reviewBody: (n) => `\u{1F415} Watchdog found ${n} issue(s) in this PR. See the summary comment for the overview.`,
     isPosted: isDuplicate
@@ -68544,17 +68507,21 @@ async function review(ctx) {
     model: ai.model
   });
   await upsertSummary(ctx.octokit, ctx.pr, REVIEW_SUMMARY_MARKER, markdown);
-  await summary.addRaw(markdown).write();
-  setOutput("score", summary2?.score ?? "");
-  setOutput("findings", findings.length);
-  info(
+  ctx.log.info(
     `Reviewed ${reviewed.length} file(s) with ${toolCalls} tool call(s): ${findings.length} finding(s), score ${summary2?.score ?? "n/a"}.`
   );
-  if (failOn !== "none") {
-    const threshold = SEVERITIES.indexOf(failOn);
+  const result = {
+    summary: markdown,
+    outputs: { score: summary2?.score ?? "", findings: findings.length }
+  };
+  if (options.failOnSeverity !== "none") {
+    const threshold = SEVERITIES.indexOf(options.failOnSeverity);
     const blocking = findings.filter((f) => SEVERITIES.indexOf(f.severity) <= threshold);
-    if (blocking.length > 0) setFailed(`${blocking.length} finding(s) at or above "${failOn}" severity.`);
+    if (blocking.length > 0) {
+      result.failure = `${blocking.length} finding(s) at or above "${options.failOnSeverity}" severity.`;
+    }
   }
+  return result;
 }
 
 // src/judge.ts
@@ -68641,6 +68608,40 @@ Call submit_verdicts exactly once with a verdict for every function.`,
 }
 
 // src/symbols.ts
+var import_node_child_process4 = require("node:child_process");
+var PY_FUNCTIONS = `
+import ast, json, sys
+tree = ast.parse(sys.stdin.read())
+print(json.dumps([
+    {"name": n.name, "start": n.lineno, "end": n.end_lineno}
+    for n in ast.walk(tree)
+    if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))
+]))
+`;
+var pythonBinary;
+function findPython() {
+  if (pythonBinary !== void 0) return pythonBinary;
+  pythonBinary = null;
+  for (const py of ["python3", "python"]) {
+    if ((0, import_node_child_process4.spawnSync)(py, ["-c", "import ast"], { timeout: 1e4 }).status === 0) {
+      pythonBinary = py;
+      break;
+    }
+  }
+  return pythonBinary;
+}
+function pythonFunctions(content) {
+  const py = findPython();
+  if (!py) return null;
+  const r = (0, import_node_child_process4.spawnSync)(py, ["-c", PY_FUNCTIONS], { input: content, encoding: "utf8", timeout: 2e4 });
+  if (r.status !== 0) return null;
+  try {
+    const defs = JSON.parse(r.stdout);
+    return defs.sort((a, b) => a.start - b.start);
+  } catch {
+    return null;
+  }
+}
 var CONTROL_KEYWORDS = /* @__PURE__ */ new Set([
   "if",
   "for",
@@ -68721,6 +68722,10 @@ function findPythonEnd(lines, startIdx, indent) {
   return end;
 }
 function findFunctions(content, lang) {
+  if (lang === "python") {
+    const exact = pythonFunctions(content);
+    if (exact) return exact;
+  }
   const lines = content.split("\n");
   const defs = [];
   lines.forEach((line, idx) => {
@@ -69223,42 +69228,39 @@ function mutationMarkdown(report) {
 }
 
 // src/tasks/testGap.ts
-async function runTestGap(ctx) {
-  const failOn = getInput("fail-on") || "none";
-  if (!["none", "high", "medium", "low"].includes(failOn)) {
-    throw new Error(`fail-on must be none, high, medium or low (got "${failOn}")`);
+function parseFailOn(value) {
+  if (!["none", "high", "medium", "low"].includes(value)) {
+    throw new Error(`fail-on must be none, high, medium or low (got "${value}")`);
   }
-  const config2 = {
-    failOn,
-    maxFunctions: Number(getInput("max-functions") || 40),
-    ignorePaths: ctx.ignorePaths
-  };
+  return value;
+}
+async function runTestGap(ctx, options) {
+  const config2 = { failOn: options.failOn, maxFunctions: options.maxFunctions, ignorePaths: ctx.ignorePaths };
   const sources = ctx.files.filter((f) => f.status !== "removed" && classifyFile(f.path, config2.ignorePaths) === "source").map((f) => f.path);
-  const root = process.env.GITHUB_WORKSPACE ?? process.cwd();
-  const repo = fsRepo(root, await fetchHeadContents(ctx, sources));
+  const repo = fsRepo(ctx.repoRoot, await fetchHeadContents(ctx, sources));
   let judgeFn;
   if (ctx.ai) {
     const provider = ctx.ai;
-    judgeFn = (symbols) => judge(symbols, { provider, repoRoot: root });
+    judgeFn = (symbols) => judge(symbols, { provider, repoRoot: ctx.repoRoot });
   } else {
-    warning("No AI key given (gemini-api-key or anthropic-api-key); running test-gap rule checks only.");
+    ctx.log.warning("No AI key given (gemini-api-key or anthropic-api-key); running test-gap rule checks only.");
   }
   const result = await findTestGaps(ctx.files, repo, config2, judgeFn);
   let summary2 = summaryMarkdown(result);
   const comments = inlineComments(result);
-  if (getBooleanInput("mutation-testing")) {
-    const runners = detectRunners(root);
+  if (options.mutationTesting) {
+    const runners = detectRunners(ctx.repoRoot);
     if (runners.size === 0) {
-      info("Skipping the mutation check: no Vitest, Jest or pytest install found.");
+      ctx.log.info("Skipping the mutation check: no Vitest, Jest or pytest install found.");
     } else {
       const report = await runMutations(ctx.files, {
-        root,
+        root: ctx.repoRoot,
         repo,
         runners,
         ignorePaths: config2.ignorePaths,
-        maxMutants: Number(getInput("max-mutants") || 30),
-        budgetMs: Number(getInput("mutation-budget") || 600) * 1e3,
-        testTimeoutMs: Number(getInput("test-timeout") || 120) * 1e3
+        maxMutants: options.maxMutants,
+        budgetMs: options.mutationBudgetMs,
+        testTimeoutMs: options.testTimeoutMs
       });
       applyMutations(result, report);
       summary2 = summaryMarkdown(result) + "\n" + mutationMarkdown(report);
@@ -69270,14 +69272,51 @@ async function runTestGap(ctx) {
     isPosted: (c, bodies) => bodies.some((b) => b.includes(c.key))
   });
   await upsertSummary(ctx.octokit, ctx.pr, SUMMARY_MARKER, summary2);
-  await summary.addRaw(summary2).write();
   const gaps = result.findings.filter((f) => isGap(f) && !f.verdict.uncertain).length;
-  setOutput("gaps", gaps);
-  info(`Checked ${result.findings.length} function(s): ${gaps} gap(s), ${onPr.size} inline comment(s) on the PR.`);
-  if (shouldFail(result, config2.failOn)) setFailed(`Found untested changes at or above "${config2.failOn}" risk.`);
+  ctx.log.info(
+    `Checked ${result.findings.length} function(s): ${gaps} gap(s), ${onPr.size} inline comment(s) on the PR.`
+  );
+  return {
+    summary: summary2,
+    outputs: { gaps },
+    failure: shouldFail(result, config2.failOn) ? `Found untested changes at or above "${config2.failOn}" risk.` : void 0
+  };
 }
 
 // src/index.ts
+function listInput(name) {
+  return getInput(name).split(/[\n,]/).map((s) => s.trim()).filter(Boolean);
+}
+async function loadContext() {
+  const pull = context2.payload.pull_request;
+  if (!pull) return null;
+  const octokit = getOctokit(getInput("github-token", { required: true }));
+  const pr = {
+    owner: context2.repo.owner,
+    repo: context2.repo.repo,
+    pullNumber: pull.number,
+    headSha: getInput("head-sha") || pull.head.sha
+  };
+  const geminiApiKey = getInput("gemini-api-key");
+  const anthropicApiKey = getInput("anthropic-api-key");
+  for (const key2 of [geminiApiKey, anthropicApiKey]) if (key2) setSecret(key2);
+  const provider = getInput("ai-provider") || "auto";
+  if (!["auto", "gemini", "anthropic"].includes(provider)) {
+    throw new Error(`ai-provider must be auto, gemini or anthropic (got "${provider}")`);
+  }
+  return {
+    octokit,
+    pr,
+    title: pull.title ?? "",
+    body: pull.body ?? "",
+    author: pull.user?.login ?? "",
+    files: await listPrFiles(octokit, pr),
+    ignorePaths: listInput("ignore-paths"),
+    ai: createProvider({ provider, geminiApiKey, anthropicApiKey, model: getInput("model") }),
+    repoRoot: process.env.GITHUB_WORKSPACE ?? process.cwd(),
+    log: { info, warning }
+  };
+}
 async function run() {
   const task = getInput("task") || "review";
   if (task !== "review" && task !== "test-gap") throw new Error(`task must be "review" or "test-gap" (got "${task}")`);
@@ -69286,8 +69325,33 @@ async function run() {
     info("Not a pull_request event; nothing to do.");
     return;
   }
-  if (task === "review") await runReview(ctx);
-  else await runTestGap(ctx);
+  const testTimeoutMs = Number(getInput("test-timeout") || 120) * 1e3;
+  let result;
+  if (task === "review") {
+    result = await runReview(ctx, {
+      minSeverity: parseSeverity("min-severity", getInput("min-severity") || "minor"),
+      failOnSeverity: parseSeverity("fail-on-severity", getInput("fail-on-severity") || "none"),
+      maxComments: Number(getInput("max-comments") || 15),
+      maxChars: Number(getInput("max-review-chars")) || void 0,
+      maxIterations: Number(getInput("max-iterations")) || void 0,
+      lintResults: readLintResults(getInput("lint-results") || void 0),
+      verifyFindings: getBooleanInput("verify-findings"),
+      maxProofs: Number(getInput("max-proofs")) || void 0,
+      testTimeoutMs
+    });
+  } else {
+    result = await runTestGap(ctx, {
+      failOn: parseFailOn(getInput("fail-on") || "none"),
+      maxFunctions: Number(getInput("max-functions") || 40),
+      mutationTesting: getBooleanInput("mutation-testing"),
+      maxMutants: Number(getInput("max-mutants") || 30),
+      mutationBudgetMs: Number(getInput("mutation-budget") || 600) * 1e3,
+      testTimeoutMs
+    });
+  }
+  await summary.addRaw(result.summary).write();
+  for (const [name, value] of Object.entries(result.outputs)) setOutput(name, value);
+  if (result.failure) setFailed(result.failure);
 }
 run().catch((err) => setFailed(err instanceof Error ? err.message : String(err)));
 /*! Bundled license information:

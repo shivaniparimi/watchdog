@@ -1,7 +1,7 @@
-import * as core from "@actions/core";
+import { AiQuotaError } from "../ai/index.js";
 import { postInlineComments, upsertSummary } from "../github.js";
+import { fsRepo } from "../repo.js";
 import { collectReviewFiles } from "../review/collect.js";
-import { readLintResults } from "../review/lintResults.js";
 import {
   REVIEW_SUMMARY_MARKER,
   isDuplicate,
@@ -10,60 +10,66 @@ import {
   validateFindings,
 } from "../review/report.js";
 import { reviewPr, SEVERITIES, summarize, type Severity } from "../review/review.js";
-import { AiQuotaError } from "../ai/index.js";
-import { fsRepo } from "../repo.js";
 import { proveFindings } from "../verify/prove.js";
 import { detectRunners } from "../verify/runner.js";
-import { fetchHeadContents, type TaskContext } from "./context.js";
+import { fetchHeadContents, type TaskContext, type TaskResult } from "./context.js";
 
-function severityInput(name: string, fallback: Severity | "none"): Severity | "none" {
-  const value = core.getInput(name) || fallback;
+export interface ReviewOptions {
+  minSeverity: Severity | "none";
+  failOnSeverity: Severity | "none";
+  maxComments: number;
+  /** Prompt budget; defaults to the provider's. */
+  maxChars?: number;
+  /** Exploration round trips; defaults to the provider's. */
+  maxIterations?: number;
+  /** Lint results as text, passed to the reviewer. */
+  lintResults?: string;
+  /** Prove suspected bugs by running tests (needs the project's dependencies installed). */
+  verifyFindings: boolean;
+  maxProofs?: number;
+  testTimeoutMs: number;
+}
+
+export function parseSeverity(name: string, value: string): Severity | "none" {
   if (value !== "none" && !(SEVERITIES as readonly string[]).includes(value)) {
     throw new Error(`${name} must be one of none, ${SEVERITIES.join(", ")} (got "${value}")`);
   }
   return value as Severity | "none";
 }
 
-export async function runReview(ctx: TaskContext): Promise<void> {
+export async function runReview(ctx: TaskContext, options: ReviewOptions): Promise<TaskResult> {
   try {
-    await review(ctx);
+    return await review(ctx, options);
   } catch (err) {
     // Running out of a free tier's quota shouldn't fail the PR: say so and move on.
     if (!(err instanceof AiQuotaError)) throw err;
     const note = `🐕 Watchdog AI review skipped: ${err.message}`;
-    core.warning(note);
+    ctx.log.warning(note);
     await upsertSummary(ctx.octokit, ctx.pr, REVIEW_SUMMARY_MARKER, `${REVIEW_SUMMARY_MARKER}\n${note}`);
-    await core.summary.addRaw(note).write();
+    return { summary: note, outputs: {} };
   }
 }
 
-async function review(ctx: TaskContext): Promise<void> {
+async function review(ctx: TaskContext, options: ReviewOptions): Promise<TaskResult> {
   if (!ctx.ai) {
     const note =
       "🐕 Watchdog AI review skipped: add a free `GEMINI_API_KEY` secret (or an `ANTHROPIC_API_KEY`) to enable it.";
-    core.warning(note);
-    await core.summary.addRaw(note).write();
-    return;
+    ctx.log.warning(note);
+    return { summary: note, outputs: {} };
   }
-
-  const minSeverity = severityInput("min-severity", "minor");
-  const failOn = severityInput("fail-on-severity", "none");
-  const maxComments = Number(core.getInput("max-comments") || 15);
   const ai = ctx.ai;
-  // Defaults depend on the provider: free tiers get smaller prompts and fewer round trips.
-  const maxChars = Number(core.getInput("max-review-chars")) || ai.reviewChars;
-  const maxIterations = Number(core.getInput("max-iterations")) || ai.maxIterations;
 
   const paths = ctx.files.filter((f) => f.status !== "removed").map((f) => f.path);
   const contents = await fetchHeadContents(ctx, paths);
   const collected = collectReviewFiles(ctx.files, (p) => contents.get(p) ?? null, {
     ignorePaths: ctx.ignorePaths,
-    maxChars,
+    // Defaults depend on the provider: free tiers get smaller prompts and fewer round trips.
+    maxChars: options.maxChars || ai.reviewChars,
   });
   const reviewed = [...collected.files, ...collected.deferred];
   if (reviewed.length === 0) {
-    core.info("No reviewable changes.");
-    return;
+    ctx.log.info("No reviewable changes.");
+    return { summary: "No reviewable changes.", outputs: {} };
   }
 
   const commits = await ctx.octokit.paginate(ctx.octokit.rest.pulls.listCommits, {
@@ -73,48 +79,49 @@ async function review(ctx: TaskContext): Promise<void> {
     per_page: 100,
   });
   const pr = { title: ctx.title, body: ctx.body, author: ctx.author, commits: commits.map((c) => c.commit.message) };
-  const options = {
+  const reviewOptions = {
     provider: ai,
-    lintResults: readLintResults(core.getInput("lint-results") || undefined),
-    repoRoot: process.env.GITHUB_WORKSPACE ?? process.cwd(),
-    maxIterations,
+    lintResults: options.lintResults,
+    repoRoot: ctx.repoRoot,
+    maxIterations: options.maxIterations || ai.maxIterations,
   };
-  const { findings: raw, toolCalls } = await reviewPr(pr, collected, options);
+  const { findings: raw, toolCalls } = await reviewPr(pr, collected, reviewOptions);
   const findings = validateFindings(raw, reviewed);
 
   // Prove suspected bugs by writing and running a test for each, when the repo's tests can run here.
-  if (core.getBooleanInput("verify-findings")) {
-    const runners = detectRunners(options.repoRoot);
+  if (options.verifyFindings) {
+    const runners = detectRunners(ctx.repoRoot);
     if (runners.size === 0) {
-      core.info(
+      ctx.log.info(
         "Skipping proof tests: no Vitest, Jest or pytest install found (install the project's dependencies first).",
       );
     } else {
       const proofs = await proveFindings(findings, {
         provider: ai,
-        root: options.repoRoot,
-        repo: fsRepo(options.repoRoot),
+        root: ctx.repoRoot,
+        repo: fsRepo(ctx.repoRoot),
         runners,
         files: reviewed,
-        maxProofs: Number(core.getInput("max-proofs")) || ai.maxProofs,
-        testTimeoutMs: Number(core.getInput("test-timeout") || 120) * 1000,
+        maxProofs: options.maxProofs || ai.maxProofs,
+        testTimeoutMs: options.testTimeoutMs,
       });
       for (const [i, proof] of proofs) findings[i]!.proof = proof;
       const counts = [...proofs.values()].reduce<Record<string, number>>(
         (acc, p) => ((acc[p.status] = (acc[p.status] ?? 0) + 1), acc),
         {},
       );
-      core.info(`Proof tests: ${JSON.stringify(counts)}`);
+      ctx.log.info(`Proof tests: ${JSON.stringify(counts)}`);
     }
   }
   const summary = await summarize(
     pr,
     reviewed,
     findings.filter((f) => f.proof?.status !== "refuted"),
-    options,
+    reviewOptions,
   );
 
-  const comments = minSeverity === "none" ? [] : reviewComments(findings, minSeverity, maxComments);
+  const comments =
+    options.minSeverity === "none" ? [] : reviewComments(findings, options.minSeverity, options.maxComments);
   const postedKeys = await postInlineComments(ctx.octokit, ctx.pr, comments, {
     reviewBody: (n) => `🐕 Watchdog found ${n} issue(s) in this PR. See the summary comment for the overview.`,
     isPosted: isDuplicate,
@@ -129,17 +136,20 @@ async function review(ctx: TaskContext): Promise<void> {
     model: ai.model,
   });
   await upsertSummary(ctx.octokit, ctx.pr, REVIEW_SUMMARY_MARKER, markdown);
-  await core.summary.addRaw(markdown).write();
-
-  core.setOutput("score", summary?.score ?? "");
-  core.setOutput("findings", findings.length);
-  core.info(
+  ctx.log.info(
     `Reviewed ${reviewed.length} file(s) with ${toolCalls} tool call(s): ${findings.length} finding(s), score ${summary?.score ?? "n/a"}.`,
   );
 
-  if (failOn !== "none") {
-    const threshold = SEVERITIES.indexOf(failOn);
+  const result: TaskResult = {
+    summary: markdown,
+    outputs: { score: summary?.score ?? "", findings: findings.length },
+  };
+  if (options.failOnSeverity !== "none") {
+    const threshold = SEVERITIES.indexOf(options.failOnSeverity);
     const blocking = findings.filter((f) => SEVERITIES.indexOf(f.severity) <= threshold);
-    if (blocking.length > 0) core.setFailed(`${blocking.length} finding(s) at or above "${failOn}" severity.`);
+    if (blocking.length > 0) {
+      result.failure = `${blocking.length} finding(s) at or above "${options.failOnSeverity}" severity.`;
+    }
   }
+  return result;
 }
