@@ -1,0 +1,9 @@
+from app.cart import MAX_ITEMS, add_item
+
+
+def test_max():
+    assert MAX_ITEMS == 50
+
+
+def test_add_item():
+    assert add_item("apple") == ["apple"]

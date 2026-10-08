@@ -1,0 +1,9 @@
+from app.ratings import MAX_STARS, average_rating
+
+
+def test_max():
+    assert MAX_STARS == 5
+
+
+def test_average():
+    assert average_rating([4, 4]) == 4

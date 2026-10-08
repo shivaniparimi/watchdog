@@ -1,0 +1,5 @@
+from app.cart import MAX_ITEMS
+
+
+def test_max():
+    assert MAX_ITEMS == 50

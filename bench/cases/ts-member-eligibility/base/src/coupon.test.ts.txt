@@ -1,0 +1,6 @@
+import { expect, it } from "vitest";
+import { COUPON_VALUE } from "./coupon";
+
+it("has a coupon value", () => {
+  expect(COUPON_VALUE).toBe(5);
+});

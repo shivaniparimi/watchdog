@@ -1,0 +1,21 @@
+{
+  "id": "py-average-rating",
+  "language": "python",
+  "title": "Show average ratings",
+  "description": "Average star rating as a float, e.g. 4.5.",
+  "tags": [
+    "bug"
+  ],
+  "bugs": [
+    {
+      "path": "app/ratings.py",
+      "contains": "sum(ratings) // len(ratings)",
+      "note": "integer division drops the .5"
+    }
+  ],
+  "weak": [],
+  "untested": [],
+  "tested": [
+    "app/ratings.py#average_rating"
+  ]
+}

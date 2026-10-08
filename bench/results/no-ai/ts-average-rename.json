@@ -1,0 +1,78 @@
+{
+  "score": {
+    "case_id": "ts-average-rename",
+    "language": "ts",
+    "tags": [
+      "clean"
+    ],
+    "mutation": {
+      "mutants": 2,
+      "killed": 2,
+      "survived": 0,
+      "weak_lines": 0,
+      "weak_detected": 0,
+      "untested_survivors": 0,
+      "unexpected_survivors": 0,
+      "skipped_files": 0
+    },
+    "test_gap": {
+      "untested_total": 0,
+      "untested_flagged": 0,
+      "tested_total": 1,
+      "tested_flagged": 0,
+      "bugs_total": 0,
+      "bugs_in_flagged_functions": 0
+    },
+    "review": null,
+    "errors": []
+  },
+  "outputs": {
+    "test_gap": {
+      "findings": [
+        {
+          "path": "src/stats.ts",
+          "name": "average",
+          "start": 1,
+          "end": 4,
+          "verdict": {
+            "covered": false,
+            "risk": "low",
+            "reason": "Existing tests mention `average` but weren't updated; couldn't confirm they cover the change.",
+            "suggestedTest": "",
+            "source": "rule",
+            "uncertain": true
+          }
+        }
+      ],
+      "mutation": {
+        "results": [
+          {
+            "path": "src/stats.ts",
+            "line": 2,
+            "original": "  const total = values.reduce((sum, v) => sum + v, 0);",
+            "mutated": "  const total = values.reduce((sum, v) => sum - v, 0);",
+            "description": "`+` \u2192 `-`",
+            "status": "killed",
+            "tests": [
+              "src/stats.test.ts"
+            ]
+          },
+          {
+            "path": "src/stats.ts",
+            "line": 3,
+            "original": "  return values.length === 0 ? 0 : total / values.length;",
+            "mutated": "  return values.length !== 0 ? 0 : total / values.length;",
+            "description": "`===` \u2192 `!==`",
+            "status": "killed",
+            "tests": [
+              "src/stats.test.ts"
+            ]
+          }
+        ],
+        "skipped": [],
+        "truncated": false
+      }
+    }
+  },
+  "seconds": 1.4
+}

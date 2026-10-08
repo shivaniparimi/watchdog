@@ -1,0 +1,5 @@
+DEFAULT_RATE = 0.08
+
+
+def with_tax(price, rate=DEFAULT_RATE):
+    return round(price + price * rate, 2)

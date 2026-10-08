@@ -1,0 +1,22 @@
+{
+  "id": "ts-top-scores",
+  "language": "ts",
+  "title": "Add leaderboard helper",
+  "description": "Returns the top n scores for the leaderboard.",
+  "tags": [
+    "bug",
+    "untested"
+  ],
+  "bugs": [
+    {
+      "path": "src/scores.ts",
+      "contains": "sort((a, b) => a - b)",
+      "note": "sorts ascending, so returns the lowest scores"
+    }
+  ],
+  "weak": [],
+  "untested": [
+    "src/scores.ts#topScores"
+  ],
+  "tested": []
+}

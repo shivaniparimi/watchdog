@@ -1,0 +1,15 @@
+{
+  "id": "ts-leap-year",
+  "language": "ts",
+  "title": "Add leap year check",
+  "description": "Adds isLeapYear with tests.",
+  "tags": [
+    "clean"
+  ],
+  "bugs": [],
+  "weak": [],
+  "untested": [],
+  "tested": [
+    "src/dates.ts#isLeapYear"
+  ]
+}

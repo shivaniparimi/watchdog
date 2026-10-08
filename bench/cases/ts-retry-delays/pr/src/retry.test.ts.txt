@@ -1,0 +1,10 @@
+import { expect, it } from "vitest";
+import { BASE_DELAY, retryDelays } from "./retry";
+
+it("has a base delay", () => {
+  expect(BASE_DELAY).toBe(100);
+});
+
+it("starts at the base delay", () => {
+  expect(retryDelays(3)[0]).toBe(100);
+});

@@ -1,0 +1,2 @@
+export interface Doc { ownerId: number }
+export interface Account { id: number; role: string }

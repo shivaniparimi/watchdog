@@ -1,0 +1,10 @@
+export const BASE_DELAY = 100;
+
+/** One delay per retry: 100, 200, 400, ... `attempts` values in total. */
+export function retryDelays(attempts: number): number[] {
+  const delays: number[] = [];
+  for (let i = 0; i <= attempts; i++) {
+    delays.push(BASE_DELAY * 2 ** i);
+  }
+  return delays;
+}

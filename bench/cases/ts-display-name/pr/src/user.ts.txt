@@ -1,0 +1,6 @@
+export interface User { firstName?: string; lastName?: string; email: string }
+
+/** The user's full name, or their email if they haven't set a name. */
+export function displayName(user: User): string {
+  return user.firstName + " " + user.lastName;
+}

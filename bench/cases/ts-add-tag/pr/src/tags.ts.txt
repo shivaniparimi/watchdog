@@ -1,0 +1,7 @@
+export const MAX_TAGS = 10;
+
+/** Returns a new array with `tag` added. Doesn't modify `tags`. */
+export function addTag(tags: string[], tag: string): string[] {
+  tags.push(tag);
+  return tags;
+}

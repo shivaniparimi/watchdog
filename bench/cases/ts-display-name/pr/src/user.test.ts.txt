@@ -1,0 +1,11 @@
+import { expect, it } from "vitest";
+import { displayName, type User } from "./user";
+
+it("has a user type", () => {
+  const u: User = { email: "a@b.c" };
+  expect(u.email).toBe("a@b.c");
+});
+
+it("shows the full name", () => {
+  expect(displayName({ firstName: "Ada", lastName: "Lovelace", email: "ada@x.io" })).toBe("Ada Lovelace");
+});

@@ -1,0 +1,18 @@
+{
+  "id": "py-with-tax",
+  "language": "python",
+  "title": "Add tax calculation",
+  "description": "Price including tax, rounded to cents.",
+  "tags": [
+    "weak-test"
+  ],
+  "bugs": [],
+  "weak": [
+    {
+      "path": "app/tax.py",
+      "contains": "price + price * rate"
+    }
+  ],
+  "untested": [],
+  "tested": []
+}

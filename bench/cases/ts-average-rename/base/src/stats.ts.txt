@@ -1,0 +1,4 @@
+export function average(xs: number[]): number {
+  const s = xs.reduce((a, b) => a + b, 0);
+  return xs.length === 0 ? 0 : s / xs.length;
+}

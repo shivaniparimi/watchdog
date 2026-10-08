@@ -1,0 +1,8 @@
+export function subtotal(prices: number[]): number {
+  return prices.reduce((sum, p) => sum + p, 0);
+}
+
+/** Takes `percent` percent off the total, e.g. applyCoupon(200, 10) is 180. */
+export function applyCoupon(total: number, percent: number): number {
+  return total - percent;
+}

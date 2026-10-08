@@ -1,0 +1,22 @@
+{
+  "id": "py-voting-age",
+  "language": "python",
+  "title": "Add voting eligibility",
+  "description": "People 18 or older can vote.",
+  "tags": [
+    "bug",
+    "boundary"
+  ],
+  "bugs": [
+    {
+      "path": "app/voting.py",
+      "contains": "age > VOTING_AGE",
+      "note": "an 18-year-old can't vote"
+    }
+  ],
+  "weak": [],
+  "untested": [],
+  "tested": [
+    "app/voting.py#can_vote"
+  ]
+}

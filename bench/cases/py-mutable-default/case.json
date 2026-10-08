@@ -1,0 +1,21 @@
+{
+  "id": "py-mutable-default",
+  "language": "python",
+  "title": "Add cart helper",
+  "description": "add_item returns a new cart containing the item.",
+  "tags": [
+    "bug"
+  ],
+  "bugs": [
+    {
+      "path": "app/cart.py",
+      "contains": "cart=[]",
+      "note": "mutable default argument is shared between calls"
+    }
+  ],
+  "weak": [],
+  "untested": [],
+  "tested": [
+    "app/cart.py#add_item"
+  ]
+}

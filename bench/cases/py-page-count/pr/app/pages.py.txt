@@ -1,0 +1,6 @@
+DEFAULT_PER_PAGE = 20
+
+
+def page_count(total_items, per_page):
+    """How many pages are needed to show every item."""
+    return total_items // per_page

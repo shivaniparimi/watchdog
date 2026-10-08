@@ -1,0 +1,22 @@
+{
+  "id": "ts-free-shipping-boundary",
+  "language": "ts",
+  "title": "Lower the free shipping threshold",
+  "description": "Free shipping now starts at $50.",
+  "tags": [
+    "bug",
+    "boundary"
+  ],
+  "bugs": [
+    {
+      "path": "src/shipping.ts",
+      "contains": "total > 50",
+      "note": "an order of exactly $50 still pays shipping"
+    }
+  ],
+  "weak": [],
+  "untested": [],
+  "tested": [
+    "src/shipping.ts#shipping"
+  ]
+}

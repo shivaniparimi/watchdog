@@ -1,0 +1,22 @@
+{
+  "id": "py-load-config",
+  "language": "python",
+  "title": "Load config from disk",
+  "description": "Raises FileNotFoundError when the config file is missing.",
+  "tags": [
+    "bug",
+    "error-handling"
+  ],
+  "bugs": [
+    {
+      "path": "app/config.py",
+      "contains": "except Exception:",
+      "note": "swallows the missing-file error the docstring promises"
+    }
+  ],
+  "weak": [],
+  "untested": [],
+  "tested": [
+    "app/config.py#load_config"
+  ]
+}

@@ -1,0 +1,22 @@
+{
+  "id": "py-page-count",
+  "language": "python",
+  "title": "Add pagination helper",
+  "description": "Number of pages needed to show all items.",
+  "tags": [
+    "bug",
+    "off-by-one"
+  ],
+  "bugs": [
+    {
+      "path": "app/pages.py",
+      "contains": "total_items // per_page",
+      "note": "rounds down; 21 items on 10 per page needs 3 pages"
+    }
+  ],
+  "weak": [],
+  "untested": [],
+  "tested": [
+    "app/pages.py#page_count"
+  ]
+}

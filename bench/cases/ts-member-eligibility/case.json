@@ -1,0 +1,18 @@
+{
+  "id": "ts-member-eligibility",
+  "language": "ts",
+  "title": "Add member coupon eligibility",
+  "description": "Members with orders over $50 get coupons.",
+  "tags": [
+    "weak-test"
+  ],
+  "bugs": [],
+  "weak": [
+    {
+      "path": "src/coupon.ts",
+      "contains": "total > 50 && member"
+    }
+  ],
+  "untested": [],
+  "tested": []
+}

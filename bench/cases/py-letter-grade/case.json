@@ -1,0 +1,15 @@
+{
+  "id": "py-letter-grade",
+  "language": "python",
+  "title": "Add letter grades",
+  "description": "A for 90+, B for 80+, otherwise C.",
+  "tags": [
+    "clean"
+  ],
+  "bugs": [],
+  "weak": [],
+  "untested": [],
+  "tested": [
+    "app/grades.py#grade"
+  ]
+}

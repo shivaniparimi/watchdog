@@ -1,0 +1,5 @@
+from app.grades import PASS_MARK
+
+
+def test_pass():
+    assert PASS_MARK == 50

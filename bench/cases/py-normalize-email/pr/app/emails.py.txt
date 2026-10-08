@@ -1,0 +1,5 @@
+def normalize_email(email):
+    if not email:
+        return ""
+    trimmed = email.strip()
+    return trimmed.lower()

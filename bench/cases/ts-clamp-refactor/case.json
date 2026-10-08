@@ -1,0 +1,15 @@
+{
+  "id": "ts-clamp-refactor",
+  "language": "ts",
+  "title": "Refactor clamp for readability",
+  "description": "Same behavior, written with explicit branches.",
+  "tags": [
+    "clean"
+  ],
+  "bugs": [],
+  "weak": [],
+  "untested": [],
+  "tested": [
+    "src/math.ts#clamp"
+  ]
+}

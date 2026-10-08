@@ -1,0 +1,5 @@
+from app.tax import DEFAULT_RATE
+
+
+def test_rate():
+    assert DEFAULT_RATE == 0.08

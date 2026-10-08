@@ -1,0 +1,66 @@
+{
+  "score": {
+    "case_id": "py-with-tax",
+    "language": "python",
+    "tags": [
+      "weak-test"
+    ],
+    "mutation": {
+      "mutants": 1,
+      "killed": 0,
+      "survived": 1,
+      "weak_lines": 1,
+      "weak_detected": 1,
+      "untested_survivors": 0,
+      "unexpected_survivors": 0,
+      "skipped_files": 0
+    },
+    "test_gap": {
+      "untested_total": 0,
+      "untested_flagged": 0,
+      "tested_total": 0,
+      "tested_flagged": 0,
+      "bugs_total": 0,
+      "bugs_in_flagged_functions": 0
+    },
+    "review": null,
+    "errors": []
+  },
+  "outputs": {
+    "test_gap": {
+      "findings": [
+        {
+          "path": "app/tax.py",
+          "name": "with_tax",
+          "start": 4,
+          "end": 5,
+          "verdict": {
+            "covered": false,
+            "risk": "medium",
+            "reason": "Changing `+` \u2192 `-` on line 5 didn't make any test fail, so the tests run this code without checking it.",
+            "suggestedTest": "",
+            "source": "mutation"
+          }
+        }
+      ],
+      "mutation": {
+        "results": [
+          {
+            "path": "app/tax.py",
+            "line": 5,
+            "original": "    return round(price + price * rate, 2)",
+            "mutated": "    return round(price - price * rate, 2)",
+            "description": "`+` \u2192 `-`",
+            "status": "survived",
+            "tests": [
+              "tests/test_tax.py"
+            ]
+          }
+        ],
+        "skipped": [],
+        "truncated": false
+      }
+    }
+  },
+  "seconds": 0.8
+}

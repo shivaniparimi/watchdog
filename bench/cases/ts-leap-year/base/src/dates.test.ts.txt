@@ -1,0 +1,6 @@
+import { expect, it } from "vitest";
+import { DAYS_IN_WEEK } from "./dates";
+
+it("has 7 days", () => {
+  expect(DAYS_IN_WEEK).toBe(7);
+});

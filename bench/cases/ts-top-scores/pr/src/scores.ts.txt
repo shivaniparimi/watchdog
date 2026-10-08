@@ -1,0 +1,8 @@
+export function total(scores: number[]): number {
+  return scores.reduce((sum, p) => sum + p, 0);
+}
+
+/** The `n` highest scores, highest first. */
+export function topScores(scores: number[], n: number): number[] {
+  return [...scores].sort((a, b) => a - b).slice(0, n);
+}

@@ -1,0 +1,67 @@
+{
+  "score": {
+    "case_id": "ts-top-scores",
+    "language": "ts",
+    "tags": [
+      "bug",
+      "untested"
+    ],
+    "mutation": {
+      "mutants": 1,
+      "killed": 0,
+      "survived": 1,
+      "weak_lines": 0,
+      "weak_detected": 0,
+      "untested_survivors": 1,
+      "unexpected_survivors": 0,
+      "skipped_files": 0
+    },
+    "test_gap": {
+      "untested_total": 1,
+      "untested_flagged": 1,
+      "tested_total": 0,
+      "tested_flagged": 0,
+      "bugs_total": 1,
+      "bugs_in_flagged_functions": 1
+    },
+    "review": null,
+    "errors": []
+  },
+  "outputs": {
+    "test_gap": {
+      "findings": [
+        {
+          "path": "src/scores.ts",
+          "name": "topScores",
+          "start": 6,
+          "end": 8,
+          "verdict": {
+            "covered": false,
+            "risk": "medium",
+            "reason": "New function `topScores` has no test that mentions it.",
+            "suggestedTest": "",
+            "source": "rule"
+          }
+        }
+      ],
+      "mutation": {
+        "results": [
+          {
+            "path": "src/scores.ts",
+            "line": 7,
+            "original": "  return [...scores].sort((a, b) => a - b).slice(0, n);",
+            "mutated": "  return [...scores].sort((a, b) => a + b).slice(0, n);",
+            "description": "`-` \u2192 `+`",
+            "status": "survived",
+            "tests": [
+              "src/scores.test.ts"
+            ]
+          }
+        ],
+        "skipped": [],
+        "truncated": false
+      }
+    }
+  },
+  "seconds": 1.0
+}

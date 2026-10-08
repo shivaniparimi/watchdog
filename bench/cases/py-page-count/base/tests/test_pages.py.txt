@@ -1,0 +1,5 @@
+from app.pages import DEFAULT_PER_PAGE
+
+
+def test_default():
+    assert DEFAULT_PER_PAGE == 20

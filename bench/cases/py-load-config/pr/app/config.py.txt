@@ -1,0 +1,10 @@
+import json
+
+
+def load_config(path):
+    """Read JSON config. Raises FileNotFoundError if the file doesn't exist."""
+    try:
+        with open(path) as f:
+            return json.load(f)
+    except Exception:
+        return {}

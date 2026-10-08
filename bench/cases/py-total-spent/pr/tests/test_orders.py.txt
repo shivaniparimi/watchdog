@@ -1,0 +1,9 @@
+from app.orders import STATUSES, total_spent
+
+
+def test_statuses():
+    assert "paid" in STATUSES
+
+
+def test_total_spent_empty():
+    assert total_spent([]) == 0

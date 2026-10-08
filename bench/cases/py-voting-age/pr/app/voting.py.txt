@@ -1,0 +1,6 @@
+VOTING_AGE = 18
+
+
+def can_vote(age):
+    """True for people 18 or older."""
+    return age > VOTING_AGE

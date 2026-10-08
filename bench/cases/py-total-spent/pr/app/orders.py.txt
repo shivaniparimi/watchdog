@@ -1,0 +1,6 @@
+STATUSES = ("paid", "refunded")
+
+
+def total_spent(orders):
+    """Sum of the amounts of paid orders."""
+    return sum(o["amount"] for o in orders if o["status"] == "refunded")

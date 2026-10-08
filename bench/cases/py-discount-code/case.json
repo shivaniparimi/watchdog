@@ -1,0 +1,18 @@
+{
+  "id": "py-discount-code",
+  "language": "python",
+  "title": "Add SAVE10 discount",
+  "description": "SAVE10 takes $10 off orders over $50.",
+  "tags": [
+    "weak-test"
+  ],
+  "bugs": [],
+  "weak": [
+    {
+      "path": "app/pricing.py",
+      "contains": "code == \"SAVE10\" and total > 50"
+    }
+  ],
+  "untested": [],
+  "tested": []
+}

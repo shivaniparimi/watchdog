@@ -1,0 +1,9 @@
+from app.pricing import CURRENCY, discount
+
+
+def test_currency():
+    assert CURRENCY == "USD"
+
+
+def test_discount():
+    assert discount(100, "SAVE10") == 90

@@ -1,0 +1,5 @@
+from app.pricing import CURRENCY
+
+
+def test_currency():
+    assert CURRENCY == 'USD'

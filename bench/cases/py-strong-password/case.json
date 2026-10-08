@@ -1,0 +1,16 @@
+{
+  "id": "py-strong-password",
+  "language": "python",
+  "title": "Add password strength check",
+  "description": "Passwords need 12+ characters and a digit.",
+  "tags": [
+    "untested",
+    "clean"
+  ],
+  "bugs": [],
+  "weak": [],
+  "untested": [
+    "app/passwords.py#is_strong_password"
+  ],
+  "tested": []
+}

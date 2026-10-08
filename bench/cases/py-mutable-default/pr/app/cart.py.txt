@@ -1,0 +1,7 @@
+MAX_ITEMS = 50
+
+
+def add_item(item, cart=[]):
+    """Return a new cart with `item` added."""
+    cart.append(item)
+    return cart

@@ -1,0 +1,26 @@
+{
+  "id": "ts-can-edit",
+  "language": "ts",
+  "title": "Restrict document editing",
+  "description": "Only the owner or an admin can edit a document.",
+  "tags": [
+    "bug",
+    "security",
+    "weak-test"
+  ],
+  "bugs": [
+    {
+      "path": "src/auth.ts",
+      "contains": "doc.ownerId !== user.id",
+      "note": "lets everyone except the owner edit"
+    }
+  ],
+  "weak": [
+    {
+      "path": "src/auth.ts",
+      "contains": "doc.ownerId !== user.id"
+    }
+  ],
+  "untested": [],
+  "tested": []
+}

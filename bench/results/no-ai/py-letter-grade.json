@@ -1,0 +1,77 @@
+{
+  "score": {
+    "case_id": "py-letter-grade",
+    "language": "python",
+    "tags": [
+      "clean"
+    ],
+    "mutation": {
+      "mutants": 2,
+      "killed": 2,
+      "survived": 0,
+      "weak_lines": 0,
+      "weak_detected": 0,
+      "untested_survivors": 0,
+      "unexpected_survivors": 0,
+      "skipped_files": 0
+    },
+    "test_gap": {
+      "untested_total": 0,
+      "untested_flagged": 0,
+      "tested_total": 1,
+      "tested_flagged": 0,
+      "bugs_total": 0,
+      "bugs_in_flagged_functions": 0
+    },
+    "review": null,
+    "errors": []
+  },
+  "outputs": {
+    "test_gap": {
+      "findings": [
+        {
+          "path": "app/grades.py",
+          "name": "grade",
+          "start": 4,
+          "end": 9,
+          "verdict": {
+            "covered": true,
+            "risk": "none",
+            "reason": "A test changed in this PR mentions `grade` (tests/test_grades.py).",
+            "suggestedTest": "",
+            "source": "rule"
+          }
+        }
+      ],
+      "mutation": {
+        "results": [
+          {
+            "path": "app/grades.py",
+            "line": 5,
+            "original": "    if score >= 90:",
+            "mutated": "    if score < 90:",
+            "description": "`>=` \u2192 `<`",
+            "status": "killed",
+            "tests": [
+              "tests/test_grades.py"
+            ]
+          },
+          {
+            "path": "app/grades.py",
+            "line": 7,
+            "original": "    if score >= 80:",
+            "mutated": "    if score < 80:",
+            "description": "`>=` \u2192 `<`",
+            "status": "killed",
+            "tests": [
+              "tests/test_grades.py"
+            ]
+          }
+        ],
+        "skipped": [],
+        "truncated": false
+      }
+    }
+  },
+  "seconds": 1.0
+}

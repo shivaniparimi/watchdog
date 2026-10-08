@@ -1,0 +1,25 @@
+{
+  "id": "py-total-spent",
+  "language": "python",
+  "title": "Show total spent",
+  "description": "Sum of the customer's paid orders.",
+  "tags": [
+    "bug",
+    "weak-test"
+  ],
+  "bugs": [
+    {
+      "path": "app/orders.py",
+      "contains": "o[\"status\"] == \"refunded\"",
+      "note": "sums refunded orders instead of paid ones"
+    }
+  ],
+  "weak": [
+    {
+      "path": "app/orders.py",
+      "contains": "o[\"status\"] == \"refunded\""
+    }
+  ],
+  "untested": [],
+  "tested": []
+}

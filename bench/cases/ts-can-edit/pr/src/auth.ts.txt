@@ -1,0 +1,7 @@
+export interface Doc { ownerId: number }
+export interface Account { id: number; role: string }
+
+/** Only the document's owner or an admin may edit it. */
+export function canEdit(user: Account, doc: Doc): boolean {
+  return user.role === "admin" || doc.ownerId !== user.id;
+}

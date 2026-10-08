@@ -1,0 +1,3 @@
+export function shipping(total: number): number {
+  return total > 100 ? 0 : 5;
+}

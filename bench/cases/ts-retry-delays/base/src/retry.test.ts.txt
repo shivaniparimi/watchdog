@@ -1,0 +1,6 @@
+import { expect, it } from "vitest";
+import { BASE_DELAY } from "./retry";
+
+it("has a base delay", () => {
+  expect(BASE_DELAY).toBe(100);
+});

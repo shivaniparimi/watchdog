@@ -1,0 +1,67 @@
+{
+  "score": {
+    "case_id": "py-total-spent",
+    "language": "python",
+    "tags": [
+      "bug",
+      "weak-test"
+    ],
+    "mutation": {
+      "mutants": 1,
+      "killed": 0,
+      "survived": 1,
+      "weak_lines": 1,
+      "weak_detected": 1,
+      "untested_survivors": 0,
+      "unexpected_survivors": 0,
+      "skipped_files": 0
+    },
+    "test_gap": {
+      "untested_total": 0,
+      "untested_flagged": 0,
+      "tested_total": 0,
+      "tested_flagged": 0,
+      "bugs_total": 1,
+      "bugs_in_flagged_functions": 1
+    },
+    "review": null,
+    "errors": []
+  },
+  "outputs": {
+    "test_gap": {
+      "findings": [
+        {
+          "path": "app/orders.py",
+          "name": "total_spent",
+          "start": 4,
+          "end": 6,
+          "verdict": {
+            "covered": false,
+            "risk": "medium",
+            "reason": "Changing `==` \u2192 `!=` on line 6 didn't make any test fail, so the tests run this code without checking it.",
+            "suggestedTest": "",
+            "source": "mutation"
+          }
+        }
+      ],
+      "mutation": {
+        "results": [
+          {
+            "path": "app/orders.py",
+            "line": 6,
+            "original": "    return sum(o[\"amount\"] for o in orders if o[\"status\"] == \"refunded\")",
+            "mutated": "    return sum(o[\"amount\"] for o in orders if o[\"status\"] != \"refunded\")",
+            "description": "`==` \u2192 `!=`",
+            "status": "survived",
+            "tests": [
+              "tests/test_orders.py"
+            ]
+          }
+        ],
+        "skipped": [],
+        "truncated": false
+      }
+    }
+  },
+  "seconds": 0.8
+}

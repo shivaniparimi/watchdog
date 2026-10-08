@@ -1,0 +1,7 @@
+CURRENCY = "USD"
+
+
+def discount(total, code):
+    if code == "SAVE10" and total > 50:
+        return total - 10
+    return total

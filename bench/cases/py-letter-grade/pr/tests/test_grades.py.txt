@@ -1,0 +1,13 @@
+from app.grades import PASS_MARK, grade
+
+
+def test_pass():
+    assert PASS_MARK == 50
+
+
+def test_grade_boundaries():
+    assert grade(95) == "A"
+    assert grade(90) == "A"
+    assert grade(89) == "B"
+    assert grade(80) == "B"
+    assert grade(79) == "C"

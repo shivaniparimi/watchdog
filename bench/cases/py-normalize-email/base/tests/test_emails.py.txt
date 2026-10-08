@@ -1,0 +1,7 @@
+from app.emails import normalize_email
+
+
+def test_normalize():
+    assert normalize_email("  Ada@Example.COM ") == "ada@example.com"
+    assert normalize_email("") == ""
+    assert normalize_email(None) == ""

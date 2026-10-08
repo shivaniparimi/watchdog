@@ -1,0 +1,54 @@
+{
+  "score": {
+    "case_id": "py-average-rating",
+    "language": "python",
+    "tags": [
+      "bug"
+    ],
+    "mutation": {
+      "mutants": 0,
+      "killed": 0,
+      "survived": 0,
+      "weak_lines": 0,
+      "weak_detected": 0,
+      "untested_survivors": 0,
+      "unexpected_survivors": 0,
+      "skipped_files": 0
+    },
+    "test_gap": {
+      "untested_total": 0,
+      "untested_flagged": 0,
+      "tested_total": 1,
+      "tested_flagged": 0,
+      "bugs_total": 1,
+      "bugs_in_flagged_functions": 0
+    },
+    "review": null,
+    "errors": []
+  },
+  "outputs": {
+    "test_gap": {
+      "findings": [
+        {
+          "path": "app/ratings.py",
+          "name": "average_rating",
+          "start": 4,
+          "end": 6,
+          "verdict": {
+            "covered": true,
+            "risk": "none",
+            "reason": "A test changed in this PR mentions `average_rating` (tests/test_ratings.py).",
+            "suggestedTest": "",
+            "source": "rule"
+          }
+        }
+      ],
+      "mutation": {
+        "results": [],
+        "skipped": [],
+        "truncated": false
+      }
+    }
+  },
+  "seconds": 0.9
+}

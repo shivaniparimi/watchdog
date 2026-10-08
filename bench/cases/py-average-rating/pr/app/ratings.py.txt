@@ -1,0 +1,6 @@
+MAX_STARS = 5
+
+
+def average_rating(ratings):
+    """Average rating as a float, e.g. [4, 5] -> 4.5."""
+    return sum(ratings) // len(ratings)

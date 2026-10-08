@@ -1,0 +1,22 @@
+{
+  "id": "ts-percent-coupon",
+  "language": "ts",
+  "title": "Add percentage coupons",
+  "description": "Adds applyCoupon so promo codes can take a percentage off.",
+  "tags": [
+    "bug",
+    "untested"
+  ],
+  "bugs": [
+    {
+      "path": "src/cart.ts",
+      "contains": "return total - percent;",
+      "note": "subtracts the raw number instead of a percentage"
+    }
+  ],
+  "weak": [],
+  "untested": [
+    "src/cart.ts#applyCoupon"
+  ],
+  "tested": []
+}

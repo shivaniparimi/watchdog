@@ -1,0 +1,10 @@
+import { expect, it } from "vitest";
+import { COUPON_VALUE, isEligible } from "./coupon";
+
+it("has a coupon value", () => {
+  expect(COUPON_VALUE).toBe(5);
+});
+
+it("non-members aren't eligible", () => {
+  expect(isEligible(10, false)).toBe(false);
+});

@@ -1,0 +1,79 @@
+{
+  "score": {
+    "case_id": "ts-can-edit",
+    "language": "ts",
+    "tags": [
+      "bug",
+      "security",
+      "weak-test"
+    ],
+    "mutation": {
+      "mutants": 2,
+      "killed": 0,
+      "survived": 2,
+      "weak_lines": 1,
+      "weak_detected": 1,
+      "untested_survivors": 0,
+      "unexpected_survivors": 0,
+      "skipped_files": 0
+    },
+    "test_gap": {
+      "untested_total": 0,
+      "untested_flagged": 0,
+      "tested_total": 0,
+      "tested_flagged": 0,
+      "bugs_total": 1,
+      "bugs_in_flagged_functions": 1
+    },
+    "review": null,
+    "errors": []
+  },
+  "outputs": {
+    "test_gap": {
+      "findings": [
+        {
+          "path": "src/auth.ts",
+          "name": "canEdit",
+          "start": 5,
+          "end": 7,
+          "verdict": {
+            "covered": false,
+            "risk": "medium",
+            "reason": "Changing `===` \u2192 `!==` on line 6 didn't make any test fail, so the tests run this code without checking it.",
+            "suggestedTest": "",
+            "source": "mutation"
+          }
+        }
+      ],
+      "mutation": {
+        "results": [
+          {
+            "path": "src/auth.ts",
+            "line": 6,
+            "original": "  return user.role === \"admin\" || doc.ownerId !== user.id;",
+            "mutated": "  return user.role !== \"admin\" || doc.ownerId !== user.id;",
+            "description": "`===` \u2192 `!==`",
+            "status": "survived",
+            "tests": [
+              "src/auth.test.ts"
+            ]
+          },
+          {
+            "path": "src/auth.ts",
+            "line": 6,
+            "original": "  return user.role === \"admin\" || doc.ownerId !== user.id;",
+            "mutated": "  return user.role === \"admin\" && doc.ownerId !== user.id;",
+            "description": "`||` \u2192 `&&`",
+            "status": "survived",
+            "tests": [
+              "src/auth.test.ts"
+            ]
+          }
+        ],
+        "skipped": [],
+        "truncated": false
+      }
+    }
+  },
+  "seconds": 1.3
+}

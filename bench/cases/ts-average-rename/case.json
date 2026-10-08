@@ -1,0 +1,15 @@
+{
+  "id": "ts-average-rename",
+  "language": "ts",
+  "title": "Rename variables in average",
+  "description": "Clearer names, same behavior.",
+  "tags": [
+    "clean"
+  ],
+  "bugs": [],
+  "weak": [],
+  "untested": [],
+  "tested": [
+    "src/stats.ts#average"
+  ]
+}

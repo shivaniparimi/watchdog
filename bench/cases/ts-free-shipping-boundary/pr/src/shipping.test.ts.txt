@@ -1,0 +1,7 @@
+import { expect, it } from "vitest";
+import { shipping } from "./shipping";
+
+it("ships free from $50", () => {
+  expect(shipping(80)).toBe(0);
+  expect(shipping(10)).toBe(5);
+});

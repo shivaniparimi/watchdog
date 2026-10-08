@@ -1,0 +1,21 @@
+{
+  "id": "ts-add-tag",
+  "language": "ts",
+  "title": "Add tags to posts",
+  "description": "Helper to add a tag without changing the original list.",
+  "tags": [
+    "bug"
+  ],
+  "bugs": [
+    {
+      "path": "src/tags.ts",
+      "contains": "tags.push(tag);",
+      "note": "mutates the input array"
+    }
+  ],
+  "weak": [],
+  "untested": [],
+  "tested": [
+    "src/tags.ts#addTag"
+  ]
+}

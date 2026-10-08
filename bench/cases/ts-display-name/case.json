@@ -1,0 +1,21 @@
+{
+  "id": "ts-display-name",
+  "language": "ts",
+  "title": "Show display names",
+  "description": "Use the user's full name in the header, falling back to email.",
+  "tags": [
+    "bug"
+  ],
+  "bugs": [
+    {
+      "path": "src/user.ts",
+      "contains": "user.firstName + \" \" + user.lastName",
+      "note": "no email fallback; shows 'undefined undefined'"
+    }
+  ],
+  "weak": [],
+  "untested": [],
+  "tested": [
+    "src/user.ts#displayName"
+  ]
+}

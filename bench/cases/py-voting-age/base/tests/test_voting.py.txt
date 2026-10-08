@@ -1,0 +1,5 @@
+from app.voting import VOTING_AGE
+
+
+def test_age():
+    assert VOTING_AGE == 18

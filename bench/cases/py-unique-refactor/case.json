@@ -1,0 +1,15 @@
+{
+  "id": "py-unique-refactor",
+  "language": "python",
+  "title": "Simplify unique()",
+  "description": "Use dict.fromkeys; keeps first-seen order like before.",
+  "tags": [
+    "clean"
+  ],
+  "bugs": [],
+  "weak": [],
+  "untested": [],
+  "tested": [
+    "app/lists.py#unique"
+  ]
+}

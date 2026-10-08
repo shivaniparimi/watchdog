@@ -1,0 +1,7 @@
+import { expect, it } from "vitest";
+import type { Doc } from "./auth";
+
+it("has docs", () => {
+  const d: Doc = { ownerId: 1 };
+  expect(d.ownerId).toBe(1);
+});

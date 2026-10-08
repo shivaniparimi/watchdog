@@ -1,0 +1,10 @@
+import { expect, it } from "vitest";
+import { MAX_TAGS, addTag } from "./tags";
+
+it("limits tags", () => {
+  expect(MAX_TAGS).toBe(10);
+});
+
+it("adds a tag", () => {
+  expect(addTag(["a"], "b")).toEqual(["a", "b"]);
+});

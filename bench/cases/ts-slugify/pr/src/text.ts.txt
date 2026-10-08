@@ -1,0 +1,13 @@
+export function shout(s: string): string {
+  return s.toUpperCase();
+}
+
+export function slugify(title: string): string {
+  if (title.length === 0) {
+    return "";
+  }
+  return title
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, "-");
+}

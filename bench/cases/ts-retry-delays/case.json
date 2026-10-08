@@ -1,0 +1,22 @@
+{
+  "id": "ts-retry-delays",
+  "language": "ts",
+  "title": "Add exponential backoff",
+  "description": "Delays for each retry: 100ms, 200ms, 400ms and so on.",
+  "tags": [
+    "bug",
+    "off-by-one"
+  ],
+  "bugs": [
+    {
+      "path": "src/retry.ts",
+      "contains": "i <= attempts",
+      "note": "off by one: returns attempts + 1 delays"
+    }
+  ],
+  "weak": [],
+  "untested": [],
+  "tested": [
+    "src/retry.ts#retryDelays"
+  ]
+}

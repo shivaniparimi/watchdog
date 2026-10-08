@@ -1,0 +1,12 @@
+import app.config
+from app.config import load_config
+
+
+def test_imports():
+    assert app.config.json
+
+
+def test_load_config(tmp_path):
+    p = tmp_path / "c.json"
+    p.write_text('{"debug": true}')
+    assert load_config(p) == {"debug": True}

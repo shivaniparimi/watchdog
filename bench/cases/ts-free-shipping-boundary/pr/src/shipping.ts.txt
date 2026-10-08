@@ -1,0 +1,4 @@
+/** Orders of $50 or more ship free. */
+export function shipping(total: number): number {
+  return total > 50 ? 0 : 5;
+}

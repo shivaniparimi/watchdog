@@ -1,0 +1,66 @@
+{
+  "score": {
+    "case_id": "ts-display-name",
+    "language": "ts",
+    "tags": [
+      "bug"
+    ],
+    "mutation": {
+      "mutants": 1,
+      "killed": 1,
+      "survived": 0,
+      "weak_lines": 0,
+      "weak_detected": 0,
+      "untested_survivors": 0,
+      "unexpected_survivors": 0,
+      "skipped_files": 0
+    },
+    "test_gap": {
+      "untested_total": 0,
+      "untested_flagged": 0,
+      "tested_total": 1,
+      "tested_flagged": 0,
+      "bugs_total": 1,
+      "bugs_in_flagged_functions": 0
+    },
+    "review": null,
+    "errors": []
+  },
+  "outputs": {
+    "test_gap": {
+      "findings": [
+        {
+          "path": "src/user.ts",
+          "name": "displayName",
+          "start": 4,
+          "end": 6,
+          "verdict": {
+            "covered": true,
+            "risk": "none",
+            "reason": "A test changed in this PR mentions `displayName` (src/user.test.ts).",
+            "suggestedTest": "",
+            "source": "rule"
+          }
+        }
+      ],
+      "mutation": {
+        "results": [
+          {
+            "path": "src/user.ts",
+            "line": 5,
+            "original": "  return user.firstName + \" \" + user.lastName;",
+            "mutated": "  return user.firstName - \" \" + user.lastName;",
+            "description": "`+` \u2192 `-`",
+            "status": "killed",
+            "tests": [
+              "src/user.test.ts"
+            ]
+          }
+        ],
+        "skipped": [],
+        "truncated": false
+      }
+    }
+  },
+  "seconds": 1.0
+}

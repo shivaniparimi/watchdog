@@ -1,0 +1,99 @@
+{
+  "score": {
+    "case_id": "py-discount-code",
+    "language": "python",
+    "tags": [
+      "weak-test"
+    ],
+    "mutation": {
+      "mutants": 4,
+      "killed": 3,
+      "survived": 1,
+      "weak_lines": 1,
+      "weak_detected": 1,
+      "untested_survivors": 0,
+      "unexpected_survivors": 0,
+      "skipped_files": 0
+    },
+    "test_gap": {
+      "untested_total": 0,
+      "untested_flagged": 0,
+      "tested_total": 0,
+      "tested_flagged": 0,
+      "bugs_total": 0,
+      "bugs_in_flagged_functions": 0
+    },
+    "review": null,
+    "errors": []
+  },
+  "outputs": {
+    "test_gap": {
+      "findings": [
+        {
+          "path": "app/pricing.py",
+          "name": "discount",
+          "start": 4,
+          "end": 7,
+          "verdict": {
+            "covered": false,
+            "risk": "medium",
+            "reason": "Changing `and` \u2192 `or` on line 5 didn't make any test fail, so the tests run this code without checking it.",
+            "suggestedTest": "",
+            "source": "mutation"
+          }
+        }
+      ],
+      "mutation": {
+        "results": [
+          {
+            "path": "app/pricing.py",
+            "line": 5,
+            "original": "    if code == \"SAVE10\" and total > 50:",
+            "mutated": "    if code != \"SAVE10\" and total > 50:",
+            "description": "`==` \u2192 `!=`",
+            "status": "killed",
+            "tests": [
+              "tests/test_pricing.py"
+            ]
+          },
+          {
+            "path": "app/pricing.py",
+            "line": 5,
+            "original": "    if code == \"SAVE10\" and total > 50:",
+            "mutated": "    if code == \"SAVE10\" and total <= 50:",
+            "description": "`>` \u2192 `<=`",
+            "status": "killed",
+            "tests": [
+              "tests/test_pricing.py"
+            ]
+          },
+          {
+            "path": "app/pricing.py",
+            "line": 5,
+            "original": "    if code == \"SAVE10\" and total > 50:",
+            "mutated": "    if code == \"SAVE10\" or total > 50:",
+            "description": "`and` \u2192 `or`",
+            "status": "survived",
+            "tests": [
+              "tests/test_pricing.py"
+            ]
+          },
+          {
+            "path": "app/pricing.py",
+            "line": 6,
+            "original": "        return total - 10",
+            "mutated": "        return total + 10",
+            "description": "`-` \u2192 `+`",
+            "status": "killed",
+            "tests": [
+              "tests/test_pricing.py"
+            ]
+          }
+        ],
+        "skipped": [],
+        "truncated": false
+      }
+    }
+  },
+  "seconds": 1.3
+}

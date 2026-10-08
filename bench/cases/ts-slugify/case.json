@@ -1,0 +1,16 @@
+{
+  "id": "ts-slugify",
+  "language": "ts",
+  "title": "Add slugify for post URLs",
+  "description": "Turns titles into URL slugs.",
+  "tags": [
+    "untested",
+    "clean"
+  ],
+  "bugs": [],
+  "weak": [],
+  "untested": [
+    "src/text.ts#slugify"
+  ],
+  "tested": []
+}

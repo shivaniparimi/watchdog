@@ -1,0 +1,7 @@
+import { expect, it } from "vitest";
+import type { User } from "./user";
+
+it("has a user type", () => {
+  const u: User = { email: "a@b.c" };
+  expect(u.email).toBe("a@b.c");
+});

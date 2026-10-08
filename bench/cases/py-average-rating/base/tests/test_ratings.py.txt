@@ -1,0 +1,5 @@
+from app.ratings import MAX_STARS
+
+
+def test_max():
+    assert MAX_STARS == 5

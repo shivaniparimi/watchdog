@@ -1,0 +1,15 @@
+{
+  "id": "py-normalize-email",
+  "language": "python",
+  "title": "Tidy up email normalizing",
+  "description": "Split into steps; behavior unchanged.",
+  "tags": [
+    "clean"
+  ],
+  "bugs": [],
+  "weak": [],
+  "untested": [],
+  "tested": [
+    "app/emails.py#normalize_email"
+  ]
+}

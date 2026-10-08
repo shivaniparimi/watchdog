@@ -1,0 +1,5 @@
+from app.orders import STATUSES
+
+
+def test_statuses():
+    assert 'paid' in STATUSES

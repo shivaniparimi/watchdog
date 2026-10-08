@@ -92,6 +92,7 @@ async function testGap(): Promise<void> {
     ai ? (symbols) => judge(symbols, { provider: ai, repoRoot: root }) : undefined,
   );
   let mutationText = "";
+  let mutation: Awaited<ReturnType<typeof runMutations>> | null = null;
   const comments = inlineComments(result);
   if (values.mutate) {
     const runners = detectRunners(root);
@@ -107,11 +108,12 @@ async function testGap(): Promise<void> {
         testTimeoutMs: 120_000,
       });
       applyMutations(result, report);
+      mutation = report;
       mutationText = "\n" + mutationMarkdown(report);
       comments.splice(0, comments.length, ...inlineComments(result), ...mutationComments(report));
     }
   }
-  if (values.json) return console.log(JSON.stringify(result.findings, null, 2));
+  if (values.json) return console.log(JSON.stringify({ findings: result.findings, mutation }, null, 2));
 
   console.log(summaryMarkdown(result) + mutationText);
   if (comments.length > 0) {
@@ -161,7 +163,7 @@ async function review(): Promise<void> {
       for (const [i, proof] of proofs) findings[i]!.proof = proof;
     }
   }
-  if (values.json) return console.log(JSON.stringify(findings, null, 2));
+  if (values.json) return console.log(JSON.stringify({ findings, toolCalls }, null, 2));
 
   const summary = await summarize(
     pr,
