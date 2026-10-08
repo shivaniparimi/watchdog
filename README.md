@@ -39,26 +39,27 @@ Adding it to a repository takes one small workflow file. Repos without their own
 
 Pass these under `with:` in the workflow above.
 
-| Input               | Default            | What it does                                                                                    |
-| ------------------- | ------------------ | ----------------------------------------------------------------------------------------------- |
-| `auto-fix`          | `true`             | Commit formatter and safe lint fixes back to the PR branch (same-repo PRs only).                |
-| `fail-on-lint`      | `true`             | Fail when lint or formatting problems remain after auto-fix.                                    |
-| `ai-review`         | `true`             | Run the AI code review.                                                                         |
-| `test-gap`          | `true`             | Run the test-gap finder.                                                                        |
-| `codeql`            | `true`             | Run CodeQL for the languages that changed.                                                      |
-| `dependency-review` | `true`             | Fail on newly added dependencies with high-severity vulnerabilities.                            |
-| `ai-provider`       | `auto`             | `auto` (Gemini if `GEMINI_API_KEY` is set, else Claude), `gemini`, or `anthropic`.              |
-| `model`             | (provider default) | Model override. Defaults: `gemini-3.8-flash` (free tier) or `claude-opus-5-5`.                  |
-| `min-severity`      | `minor`            | Lowest AI finding severity posted inline: `critical`, `major`, `minor`, `nit`, or `none`.       |
-| `max-comments`      | `15`               | Maximum AI inline comments per run. The most severe are kept.                                   |
-| `fail-on-severity`  | `none`             | Fail the AI review on findings at this severity or worse.                                       |
-| `test-gap-fail-on`  | `none`             | Fail the test-gap check on gaps at this risk or higher: `low`, `medium`, `high`.                |
-| `verify-findings`   | `true`             | Prove suspected bugs with a test (needs an AI key and a supported test runner).                 |
-| `mutation-testing`  | `true`             | Run the mutation check on changed lines.                                                        |
-| `max-mutants`       | `30`               | Maximum deliberate breaks per PR.                                                               |
-| `setup-command`     | (auto)             | Command that installs the project's dependencies for test runs, e.g. `npm ci && npm run build`. |
-| `ignore-paths`      | (none)             | Globs the AI review and test-gap finder skip.                                                   |
-| `watchdog-ref`      | `main`             | Pin Watchdog to a tag or commit.                                                                |
+| Input               | Default            | What it does                                                                                                                 |
+| ------------------- | ------------------ | ---------------------------------------------------------------------------------------------------------------------------- |
+| `auto-fix`          | `true`             | Commit formatter and safe lint fixes back to the PR branch (same-repo PRs only).                                             |
+| `fail-on-lint`      | `true`             | Fail when lint or formatting problems remain after auto-fix.                                                                 |
+| `ai-review`         | `true`             | Run the AI code review.                                                                                                      |
+| `test-gap`          | `true`             | Run the test-gap finder.                                                                                                     |
+| `codeql`            | `true`             | Run CodeQL for the languages that changed.                                                                                   |
+| `dependency-review` | `true`             | Fail on newly added dependencies with high-severity vulnerabilities.                                                         |
+| `ai-provider`       | `auto`             | `auto` (Gemini if `GEMINI_API_KEY` is set, else Claude), `gemini`, or `anthropic`.                                           |
+| `model`             | (provider default) | Model override. Defaults: `gemini-3.8-flash` (free tier, with automatic fallback to other free models) or `claude-opus-5-5`. |
+| `max-iterations`    | (provider default) | Maximum API round trips while the AI explores the repository: 8 on Gemini's free tier, 30 on Claude.                         |
+| `min-severity`      | `minor`            | Lowest AI finding severity posted inline: `critical`, `major`, `minor`, `nit`, or `none`.                                    |
+| `max-comments`      | `15`               | Maximum AI inline comments per run. The most severe are kept.                                                                |
+| `fail-on-severity`  | `none`             | Fail the AI review on findings at this severity or worse.                                                                    |
+| `test-gap-fail-on`  | `none`             | Fail the test-gap check on gaps at this risk or higher: `low`, `medium`, `high`.                                             |
+| `verify-findings`   | `true`             | Prove suspected bugs with a test (needs an AI key and a supported test runner).                                              |
+| `mutation-testing`  | `true`             | Run the mutation check on changed lines.                                                                                     |
+| `max-mutants`       | `30`               | Maximum deliberate breaks per PR.                                                                                            |
+| `setup-command`     | (auto)             | Command that installs the project's dependencies for test runs, e.g. `npm ci && npm run build`.                              |
+| `ignore-paths`      | (none)             | Globs the AI review and test-gap finder skip.                                                                                |
+| `watchdog-ref`      | `main`             | Pin Watchdog to a tag or commit.                                                                                             |
 
 Optional secret: `WATCHDOG_PUSH_TOKEN`, a fine-grained token with contents write access. With GitHub's default token, the run started by the auto-fix commit waits for someone to approve it under the Actions tab. Commits pushed with this token start their runs normally.
 
@@ -192,7 +193,7 @@ npm run build      # bundle to dist/index.cjs; commit dist/ so the Action can ru
 
 ## Known limits
 
-- **Gemini's free tier** has tight rate limits that Google changes often; Watchdog uses smaller prompts and fewer exploration rounds on it, and retries when throttled. On the free tier, [Google may use what you send to improve its products and humans may review it](https://ai.google.dev/gemini-api/terms), so use a paid key or Claude for private code you don't want shared.
+- **Gemini's free tier** is small: about 20 requests per model per day at the time of writing (Google changes this often), and one Watchdog run can use 10–20. Watchdog stretches it by switching to the next free model when one runs out (3.8 → 3.7 → 3.6 → 3.5 → 2.5 Flash), waiting out short rate limits, and using fewer exploration rounds and at most 2 proof tests. If every model is used up, the AI steps post a note saying when the quota resets, and the PR isn't failed. Use a key dedicated to Watchdog, since other apps on the same key share its quota. On the free tier, [Google may use what you send to improve its products and humans may review it](https://ai.google.dev/gemini-api/terms), so use a paid key or Claude for private code you don't want shared.
 - With Claude, the AI checks cost money per PR. Larger PRs and more exploration cost more; `max-iterations`, `ignore-paths` and the prompt budget keep this bounded.
 - Proof tests and the mutation check need the project's tests to run in CI: Vitest, Jest or pytest, with dependencies that install with `npm ci`, `pip install -r requirements.txt` or `pip install -e .` (or a custom `setup-command`). Other runners are skipped.
 - The mutation check only tries simple operator changes on added lines, so a high score isn't proof that tests are thorough; a surviving change is a strong sign they aren't.
