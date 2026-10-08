@@ -38,6 +38,51 @@ jobs:
       - name: Check shell scripts
         run: bash -n scripts/*.sh
 
+  benchmark:
+    name: Benchmark (Python)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - run: pip install --quiet -r bench/requirements.txt
+      - name: Benchmark unit tests
+        run: python -m pytest -q bench/tests
+      - name: Run the free (no-AI) benchmark
+        working-directory: bench
+        run: |
+          python -m watchdog_bench run --out "$RUNNER_TEMP/bench" --force
+          cat "$RUNNER_TEMP/bench/report.md" >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: benchmark-report
+          path: ${{ runner.temp }}/bench
+
+  server-image:
+    name: Server Docker image
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - run: npm run build
+      - run: docker build -t watchdog-server .
+      - name: Start the container and check /health
+        run: |
+          docker run -d --name wd -p 3000:3000 -e WEBHOOK_SECRET=ci -e GITHUB_TOKEN=ci watchdog-server
+          for _ in $(seq 1 20); do curl -fsS localhost:3000/health && exit 0; sleep 1; done
+          docker logs wd
+          exit 1
+
   watchdog:
     name: Watchdog
     if: github.event_name == 'pull_request'

@@ -14,6 +14,8 @@ Unlike most AI reviewers, Watchdog **checks its claims by running your tests**. 
 - **Test-gap finder**: flags functions whose logic changed without a matching test.
 - **Free to run**: uses Google Gemini's free tier by default, or Claude if you prefer.
 - **One summary**: every check's result in a single table.
+- **Two ways to run**: as a GitHub Actions workflow, or as a self-hosted **Express** server that receives GitHub webhooks.
+- **Measured, not just claimed**: a **Python** benchmark of 24 planted-bug PRs scores how well Watchdog does, with a **FastAPI** dashboard for the results.
 
 ## Tech Stack
 
@@ -21,6 +23,8 @@ Unlike most AI reviewers, Watchdog **checks its claims by running your tests**. 
 | ---------------------------------- | ------------------------------------------------------ |
 | Automation                         | GitHub Actions (reusable workflow), Bash               |
 | Watchdog itself                    | TypeScript, Node.js, Zod, Vitest, esbuild              |
+| Self-hosted server                 | Express, Docker                                        |
+| Benchmark and dashboard            | Python, FastAPI, pandas, matplotlib, pytest            |
 | AI                                 | Google Gemini (free tier, default) or Anthropic Claude |
 | JavaScript / TypeScript            | ESLint, Prettier, `tsc`                                |
 | Python                             | Flake8, Black, isort, mypy, Bandit, pip-audit          |
@@ -85,7 +89,32 @@ flowchart LR
     MU -->|all tests pass| GAP[Comment: no test checks this line]
 ```
 
-### 4. How the code is organized
+### 4. Self-hosted server (Express)
+
+The same checks can run outside GitHub Actions. GitHub sends a webhook when a PR changes; the server verifies its signature, queues a job, checks out the PR's exact commit, runs the tasks, and posts the results.
+
+```mermaid
+flowchart LR
+    GH[GitHub webhook] -->|HMAC-signed| E[Express server]
+    API["REST API<br/>POST /api/reviews"] --> E
+    E --> Q[Job queue<br/>one at a time]
+    Q --> W[Worker: check out PR commit]
+    W --> T[Review and test-gap tasks]
+    T -->|comments| GH2[Pull request]
+```
+
+### 5. Benchmark (Python)
+
+```mermaid
+flowchart LR
+    C[24 test cases<br/>known bugs, weak tests,<br/>untested code, clean PRs] --> B[Build a git repo per case]
+    B --> W[Run Watchdog]
+    W --> S[Score against the answer key]
+    S --> R[Report and charts<br/>pandas, matplotlib]
+    R --> D[FastAPI dashboard]
+```
+
+### 6. How the code is organized
 
 ```mermaid
 flowchart TD
@@ -100,6 +129,8 @@ flowchart TD
     TGAP --> AIL
     VER --> AIL
     AIL --> TOOLS["src/agent/<br/>repository tools"]
+    SRV["src/server/<br/>Express server"] --> T
+    BENCH["bench/<br/>Python benchmark + FastAPI"] -->|runs| ACT
 ```
 
 ## Quick Start
@@ -167,6 +198,59 @@ All options are listed in [`.github/workflows/watchdog.yml`](.github/workflows/w
 | SQL                     | `.sql`                      | SQLFluff           | SQLFluff     | —                   |
 | Styles, data, docs      | `.css` `.json` `.yml` `.md` | Prettier           | —            | —                   |
 
+## Self-hosted server
+
+Run Watchdog as a service instead of (or alongside) GitHub Actions:
+
+```bash
+WEBHOOK_SECRET=... GITHUB_TOKEN=... GEMINI_API_KEY=... npm run server
+# or, with Docker:
+npm run build && docker build -t watchdog-server . && docker run -p 3000:3000 -e WEBHOOK_SECRET=... -e GITHUB_TOKEN=... watchdog-server
+```
+
+Then add a webhook in your repository (**Settings → Webhooks**): payload URL `https://<your-server>/webhooks/github`, content type `application/json`, the same secret, and the **Pull requests** event.
+
+| Endpoint                             | What it does                                                 |
+| ------------------------------------ | ------------------------------------------------------------ |
+| `POST /webhooks/github`              | Receives PR events (signature checked), queues a review      |
+| `POST /api/reviews`                  | Starts a review on demand: `{"owner", "repo", "pullNumber"}` |
+| `GET /api/jobs`, `GET /api/jobs/:id` | Job status and results                                       |
+| `GET /health`                        | Health check with job counts                                 |
+
+| Variable                               | Required | What it does                                                                                                 |
+| -------------------------------------- | -------- | ------------------------------------------------------------------------------------------------------------ |
+| `WEBHOOK_SECRET`                       | yes      | Secret shared with the GitHub webhook                                                                        |
+| `GITHUB_TOKEN`                         | yes      | Token that can read the repo and comment on PRs                                                              |
+| `GEMINI_API_KEY` / `ANTHROPIC_API_KEY` | no       | Turns on the AI steps                                                                                        |
+| `WATCHDOG_API_KEY`                     | no       | Turns on the `/api` routes (sent as a Bearer token)                                                          |
+| `WATCHDOG_TASKS`                       | no       | `review,test-gap` (default) or one of them                                                                   |
+| `RUN_TESTS`                            | no       | `true` runs proof tests and the mutation check. Off by default, because it runs the PR's code on your server |
+
+## Benchmark
+
+To check that Watchdog actually works, [`bench/`](bench/) holds 24 small pull requests (12 TypeScript, 12 Python) with an answer key: 13 planted bugs, 5 lines with weak tests, 4 untested functions, and clean refactors that should raise nothing. A Python runner builds a git repo for each case, runs Watchdog, and scores the output.
+
+Results of the free checks (no AI), from [`bench/results/no-ai`](bench/results/no-ai/report.md):
+
+| Metric                                             | Result     |
+| -------------------------------------------------- | ---------- |
+| Lines with weak tests caught by the mutation check | **5 / 5**  |
+| Untested functions flagged                         | **4 / 4**  |
+| Well-tested functions wrongly flagged              | **0 / 15** |
+| Mutation false alarms                              | **0**      |
+| Planted bugs in code the free checks flagged       | 4 / 13     |
+
+The last row is why the AI review exists: most logic bugs sit in code that _is_ tested, just not for the bug. Running the benchmark with `--ai` scores the AI review and proof tests too (bugs found, false positives before and after proof tests).
+
+![Benchmark results](bench/results/no-ai/summary.png)
+
+```bash
+cd bench && pip install -r requirements.txt
+python -m watchdog_bench run              # free checks, about 30 seconds
+GEMINI_API_KEY=... python -m watchdog_bench run --ai   # also the AI review and proof tests
+python -m watchdog_bench serve            # FastAPI dashboard at http://127.0.0.1:8000
+```
+
 ## Project Structure
 
 ```
@@ -183,12 +267,15 @@ watchdog/
 │   ├── setup-project.sh    # Install a repo's dependencies to run its tests
 │   └── install-hook.sh     # Optional pre-commit hook
 ├── configs/                # Default linter configs
+├── Dockerfile              # Container for the self-hosted server
+├── bench/                  # Python benchmark: cases, runner, scoring, FastAPI dashboard
 ├── src/
+│   ├── server/             # Express server: webhooks, REST API, job queue
 │   ├── ai/                 # Gemini and Claude providers
 │   ├── agent/              # Read-only repository tools for the AI
 │   ├── review/             # AI code review
 │   ├── verify/             # Proof tests, mutation check, test runners
-│   ├── tasks/              # Action entry points
+│   ├── tasks/              # Review and test-gap tasks (shared by the Action and the server)
 │   ├── *.ts                # Test-gap finder
 │   └── local.ts            # Run Watchdog locally
 └── test/                   # Unit tests
@@ -209,7 +296,7 @@ npm run local -- --task test-gap --repo ../my-project --no-ai --mutate
 scripts/install-hook.sh ../my-project
 ```
 
-To work on Watchdog itself: `npm test`, `npm run typecheck`, and `npm run build` (commit `dist/` afterward).
+To work on Watchdog itself: `npm test`, `npm run typecheck`, `npm run build` (commit `dist/` afterward), and `python -m pytest bench/tests` for the benchmark.
 
 ## Good to know
 
